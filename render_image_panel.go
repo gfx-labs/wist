@@ -5,6 +5,7 @@ import (
 	"image"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -69,6 +70,12 @@ func detectProto() (gfxProto, bool) {
 		return gfxSixel, tmux
 	}
 	term, prog := os.Getenv("TERM"), strings.ToLower(os.Getenv("TERM_PROGRAM"))
+	if tmux {
+		// TERM and TERM_PROGRAM name tmux here: ask it for the outer terminal.
+		out, _ := exec.Command("tmux", "display", "-p", "#{client_termname}\t#{client_termtype}").Output()
+		name, typ, _ := strings.Cut(strings.TrimSpace(string(out)), "\t")
+		term, prog = name, strings.ToLower(strings.Fields(typ + " ")[0])
+	}
 	switch {
 	case strings.Contains(term, "kitty"), strings.Contains(term, "ghostty"),
 		prog == "ghostty", prog == "wezterm",
@@ -258,6 +265,11 @@ func (g *gfxState) drawImage(im *storedImage, r rect, covered bool) error {
 		im.w, im.h = iw, ih
 	}
 	fw, fh := fitSize(iw, ih, r.w*cw, r.h*ch)
+	if g.proto == gfxKitty {
+		// The terminal scales placements for free: let small images grow
+		// up to 4x to use the panel.
+		fw, fh = fitSize(iw*4, ih*4, r.w*cw, r.h*ch)
+	}
 	cols, rows := min(r.w, (fw+cw-1)/cw), min(r.h, (fh+ch-1)/ch)
 	if g.proto == gfxSixel {
 		if covered {
@@ -278,8 +290,8 @@ func (g *gfxState) drawImage(im *storedImage, r rect, covered bool) error {
 	// kitty
 	if !g.uploaded[im.id] {
 		data := im.data
-		if im.mime != "image/png" || iw*ih > fw*fh*2 {
-			img, err := decodeScaled(im.data, max(fw, 1), max(fh, 1))
+		if im.mime != "image/png" || iw*ih > r.w*cw*r.h*ch*2 {
+			img, err := decodeScaled(im.data, r.w*cw, r.h*ch)
 			if err != nil {
 				return err
 			}
