@@ -40,14 +40,14 @@ func queuedPrompt(queue []string, urgent bool) string {
 // the turn and sends right after it stops.
 func (u *UI) submitEditor(urgent bool) {
 	// A trailing backslash continues the line, as in a shell.
-	if n := len(u.ed.buf); !urgent && n > 0 && u.ed.cur == n && u.ed.buf[n-1] == '\\' {
-		u.ed.buf = u.ed.buf[:n-1]
-		u.ed.cur--
-		u.ed.insert("\n")
+	if n := len(u.ed.Buf); !urgent && n > 0 && u.ed.Cur == n && u.ed.Buf[n-1] == '\\' {
+		u.ed.Buf = u.ed.Buf[:n-1]
+		u.ed.Cur--
+		u.ed.Insert("\n")
 		return
 	}
-	text := u.ed.text()
-	u.ed.clear()
+	text := u.ed.Text()
+	u.ed.Clear()
 	if urgent && strings.TrimSpace(text) == "" && len(u.queue) > 0 {
 		// Promote what is already queued.
 		u.urgent = true

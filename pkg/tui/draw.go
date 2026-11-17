@@ -33,7 +33,7 @@ func (u *UI) draw() {
 	}
 
 	inputW := w - 4
-	rows, cy, cx := u.ed.layout(inputW)
+	rows, cy, cx := u.ed.Layout(inputW)
 	maxRows := max(3, h/3)
 	first := 0
 	if len(rows) > maxRows {
@@ -321,7 +321,7 @@ func (u *UI) drawInput(top, w int, rows []string) {
 		drawStr(sc, 0, y, w, prompt, stUser.Bold(true))
 		drawStr(sc, 2, y, w-1, r, stBase)
 	}
-	if len(u.ed.buf) == 0 {
+	if len(u.ed.Buf) == 0 {
 		hint := "message towa…"
 		if u.busy {
 			hint = "type to queue a follow-up…"

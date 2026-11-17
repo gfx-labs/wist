@@ -36,7 +36,7 @@ func (u *UI) renderKey(ev *tcell.EventKey) bool {
 		}
 	}
 	if ev.Key() == tcell.KeyRune && ev.Modifiers() == 0 && (ev.Rune() == '[' || ev.Rune() == ']') &&
-		rs.panel.open && rs.panel.mode == "image" && len(u.ed.buf) == 0 && len(imgs.list) > 1 {
+		rs.panel.open && rs.panel.mode == "image" && len(u.ed.Buf) == 0 && len(imgs.list) > 1 {
 		u.cycleImage(map[rune]int{'[': -1, ']': 1}[ev.Rune()])
 		return true
 	}

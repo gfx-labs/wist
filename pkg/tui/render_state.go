@@ -371,7 +371,7 @@ func (u *UI) searchKey(ev *tcell.EventKey) bool {
 		}
 		return false
 	}
-	if ev.Key() == tcell.KeyRune && ev.Modifiers()&tcell.ModAlt == 0 && len(u.ed.buf) == 0 {
+	if ev.Key() == tcell.KeyRune && ev.Modifiers()&tcell.ModAlt == 0 && len(u.ed.Buf) == 0 {
 		switch ev.Rune() {
 		case 'n': // older (up the transcript), like less after a ? search
 			u.jumpMatch(-1, false)

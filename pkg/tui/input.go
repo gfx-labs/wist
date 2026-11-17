@@ -178,7 +178,7 @@ var localCommands = []localCmd{
 
 func (u *UI) updateCompletion() {
 	u.comp = nil
-	buf := u.ed.buf[:u.ed.cur]
+	buf := u.ed.Buf[:u.ed.Cur]
 	start := len(buf)
 	for start > 0 && buf[start-1] != ' ' && buf[start-1] != '\n' {
 		start--
@@ -273,8 +273,8 @@ func (u *UI) acceptCompletion() {
 		return
 	}
 	ins := c.items[c.sel].value
-	u.ed.buf = append(u.ed.buf[:c.start], append([]rune(ins), u.ed.buf[u.ed.cur:]...)...)
-	u.ed.cur = c.start + len([]rune(ins))
+	u.ed.Buf = append(u.ed.Buf[:c.start], append([]rune(ins), u.ed.Buf[u.ed.Cur:]...)...)
+	u.ed.Cur = c.start + len([]rune(ins))
 	u.comp = nil
 }
 
@@ -324,7 +324,7 @@ func (u *UI) handleKey(ev *tcell.EventKey) {
 		return
 	}
 	if ev.Key() == tcell.KeyBackspace || ev.Key() == tcell.KeyBackspace2 {
-		if len(u.ed.buf) == 0 && len(u.images) > 0 && u.picker == nil {
+		if len(u.ed.Buf) == 0 && len(u.images) > 0 && u.picker == nil {
 			u.images = u.images[:len(u.images)-1]
 			u.notify("removed image")
 			return
@@ -361,8 +361,8 @@ func (u *UI) handleKey(ev *tcell.EventKey) {
 			if mod == 0 {
 				// Enter on a /command runs it straight away.
 				u.acceptCompletion()
-				if t := strings.TrimSpace(u.ed.text()); strings.HasPrefix(t, "/") && !strings.Contains(t, " ") {
-					u.ed.clear()
+				if t := strings.TrimSpace(u.ed.Text()); strings.HasPrefix(t, "/") && !strings.Contains(t, " ") {
+					u.ed.Clear()
 					u.submit(t)
 					return
 				}
@@ -390,66 +390,66 @@ func (u *UI) handleKey(ev *tcell.EventKey) {
 
 	switch ev.Key() {
 	case tcell.KeyTab:
-		if len(u.ed.buf) == 0 {
+		if len(u.ed.Buf) == 0 {
 			u.cycleMode()
 		}
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		if mod&(tcell.ModAlt|tcell.ModCtrl) != 0 {
-			u.ed.cut(u.ed.wordLeft(), u.ed.cur)
+			u.ed.Cut(u.ed.WordLeft(), u.ed.Cur)
 		} else {
-			u.ed.backspace()
+			u.ed.Backspace()
 		}
 	case tcell.KeyDelete:
-		u.ed.del()
+		u.ed.Delete()
 	case tcell.KeyLeft:
 		if mod&(tcell.ModCtrl|tcell.ModAlt) != 0 {
-			u.ed.cur = u.ed.wordLeft()
+			u.ed.Cur = u.ed.WordLeft()
 		} else {
-			u.ed.left()
+			u.ed.Left()
 		}
 	case tcell.KeyRight:
 		if mod&(tcell.ModCtrl|tcell.ModAlt) != 0 {
-			u.ed.cur = u.ed.wordRight()
+			u.ed.Cur = u.ed.WordRight()
 		} else {
-			u.ed.right()
+			u.ed.Right()
 		}
 	case tcell.KeyUp:
-		u.ed.up()
+		u.ed.Up()
 	case tcell.KeyDown:
-		u.ed.down()
+		u.ed.Down()
 	case tcell.KeyHome, tcell.KeyCtrlA:
-		u.ed.cur = u.ed.lineStart()
+		u.ed.Cur = u.ed.LineStart()
 	case tcell.KeyEnd, tcell.KeyCtrlE:
-		u.ed.cur = u.ed.lineEnd()
+		u.ed.Cur = u.ed.LineEnd()
 	case tcell.KeyCtrlB:
-		u.ed.left()
+		u.ed.Left()
 	case tcell.KeyCtrlF:
-		u.ed.right()
+		u.ed.Right()
 	case tcell.KeyCtrlW:
-		u.ed.cut(u.ed.wordLeft(), u.ed.cur)
+		u.ed.Cut(u.ed.WordLeft(), u.ed.Cur)
 	case tcell.KeyCtrlU:
-		u.ed.cut(u.ed.lineStart(), u.ed.cur)
+		u.ed.Cut(u.ed.LineStart(), u.ed.Cur)
 	case tcell.KeyCtrlK:
-		u.ed.cut(u.ed.cur, u.ed.lineEnd())
+		u.ed.Cut(u.ed.Cur, u.ed.LineEnd())
 	case tcell.KeyCtrlY:
-		u.ed.yank()
+		u.ed.Yank()
 	case tcell.KeyCtrlP:
-		u.ed.histPrev()
+		u.ed.HistPrev()
 	case tcell.KeyCtrlN:
-		u.ed.histNext()
+		u.ed.HistNext()
 	case tcell.KeyRune:
 		if mod&tcell.ModAlt != 0 {
 			switch ev.Rune() {
 			case 'b':
-				u.ed.cur = u.ed.wordLeft()
+				u.ed.Cur = u.ed.WordLeft()
 			case 'f':
-				u.ed.cur = u.ed.wordRight()
+				u.ed.Cur = u.ed.WordRight()
 			case 'd':
-				u.ed.cut(u.ed.cur, u.ed.wordRight())
+				u.ed.Cut(u.ed.Cur, u.ed.WordRight())
 			}
 			break
 		}
-		u.ed.insert(string(ev.Rune()))
+		u.ed.Insert(string(ev.Rune()))
 	}
 	u.updateCompletion()
 }
@@ -458,8 +458,8 @@ func (u *UI) ctrlCAction() {
 	switch {
 	case u.busy:
 		u.cancelTurn()
-	case len(u.ed.buf) > 0:
-		u.ed.clear()
+	case len(u.ed.Buf) > 0:
+		u.ed.Clear()
 	case time.Since(u.ctrlC) < 2*time.Second:
 		u.quit = true
 	default:
@@ -485,15 +485,15 @@ func (u *UI) toggleLastTool() {
 
 func (u *UI) pickHistory() {
 	var items []pickItem
-	for i := len(u.ed.hist) - 1; i >= 0; i-- {
-		h := u.ed.hist[i]
+	for i := len(u.ed.Hist) - 1; i >= 0; i-- {
+		h := u.ed.Hist[i]
 		items = append(items, pickItem{label: strings.ReplaceAll(h, "\n", " ⏎ "), value: h})
 	}
 	if len(items) == 0 {
 		u.notify("no history yet")
 		return
 	}
-	u.openPicker("prompt history", items, 0, func(it pickItem) { u.ed.set(it.value) })
+	u.openPicker("prompt history", items, 0, func(it pickItem) { u.ed.Set(it.value) })
 }
 
 func (u *UI) permKey(ev *tcell.EventKey) bool {
@@ -748,6 +748,6 @@ func (u *UI) finishPaste() {
 			return
 		}
 	}
-	u.ed.insert(text)
+	u.ed.Insert(text)
 	u.updateCompletion()
 }

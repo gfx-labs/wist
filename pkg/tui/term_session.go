@@ -174,7 +174,7 @@ func composeResult(data []byte) string {
 // editInEditor composes the input in $VISUAL/$EDITOR. The command runs
 // through sh so values like "code --wait" work.
 func (u *UI) editInEditor() {
-	path, err := writeComposeFile(u.ed.text())
+	path, err := writeComposeFile(u.ed.Text())
 	if err != nil {
 		u.notify("editor: " + err.Error())
 		return
@@ -199,7 +199,7 @@ func (u *UI) editInEditor() {
 		u.notify("editor: " + err.Error())
 		return
 	}
-	u.ed.set(composeResult(data))
+	u.ed.Set(composeResult(data))
 }
 
 // --- OSC 52 clipboard ----------------------------------------------------
@@ -238,5 +238,5 @@ func (u *UI) handleClipboard(ev *tcell.EventClipboard) {
 		u.attach(attachment{name: "clipboard", mime: m, data: data})
 		return
 	}
-	u.ed.insert(strings.ReplaceAll(string(data), "\r\n", "\n"))
+	u.ed.Insert(strings.ReplaceAll(string(data), "\r\n", "\n"))
 }

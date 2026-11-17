@@ -29,10 +29,10 @@ func init() {
 			if u.busy {
 				u.submitEditor(true)
 			} else {
-				u.ed.insert("\n")
+				u.ed.Insert("\n")
 			}
 		}},
-		{"newline", "insert a newline", []string{"ctrl+j"}, func(u *UI) { u.ed.insert("\n") }},
+		{"newline", "insert a newline", []string{"ctrl+j"}, func(u *UI) { u.ed.Insert("\n") }},
 		{"paste_image", "attach an image from the clipboard", []string{"ctrl+v", "alt+v"}, (*UI).pasteImage},
 		{"paste_text", "paste text from the terminal clipboard (OSC 52)", nil, func(u *UI) { u.requestClipboard(false) }},
 		{"edit_in_editor", "compose the input in $VISUAL/$EDITOR", []string{"alt+x"}, (*UI).editInEditor},
@@ -46,10 +46,10 @@ func init() {
 		}},
 		{"cancel", "interrupt, clear input, or quit when pressed twice", []string{"ctrl+c"}, (*UI).ctrlCAction},
 		{"quit", "quit when the input is empty, else delete forward", []string{"ctrl+d"}, func(u *UI) {
-			if len(u.ed.buf) == 0 {
+			if len(u.ed.Buf) == 0 {
 				u.quit = true
 			} else {
-				u.ed.del()
+				u.ed.Delete()
 			}
 		}},
 		{"cycle_mode", "cycle the permission mode", []string{"shift+tab"}, (*UI).cycleMode},

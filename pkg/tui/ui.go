@@ -11,6 +11,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	acp "github.com/gfx-labs/go-acp"
+	"github.com/gfx-labs/wist/pkg/editor"
 )
 
 // UI owns all state. Only the loop goroutine touches it; other goroutines
@@ -63,7 +64,7 @@ type UI struct {
 	statsSummary string
 
 	// input
-	ed       editor
+	ed       editor.Editor
 	pasting  bool
 	pasteBuf strings.Builder // a paste, inserted when it ends
 	images   []attachment    // images sent with the next prompt
@@ -473,7 +474,7 @@ func (u *UI) submit(text string) {
 		}
 		text = "(image)"
 	}
-	u.ed.remember(text)
+	u.ed.Remember(text)
 	if strings.HasPrefix(text, "/") && u.localCommand(text) {
 		return
 	}
@@ -814,7 +815,7 @@ func (u *UI) pickSession() {
 					u.archiveSession(id)
 				case tcell.KeyCtrlR:
 					u.picker = nil
-					u.ed.set("/rename --id " + it.value + " ")
+					u.ed.Set("/rename --id " + it.value + " ")
 				default:
 					return false
 				}
