@@ -5,7 +5,7 @@ wist is a terminal UI for [towa](https://github.com/gfx-labs/towa), built with [
 wist starts `towa` as a child process and talks the Agent Client Protocol to it over stdio, using [go-acp](https://github.com/gfx-labs/go-acp). towa's stderr goes to `$XDG_STATE_HOME/wist/towa.log`.
 
 ```sh
-go install github.com/abs3ntdev/wist@latest
+go install github.com/gfx-labs/wist@latest
 wist                                  # new session in the current directory
 wist --resume <session-id>            # load a stored session
 wist -p "fix the failing test"        # send a first prompt right away

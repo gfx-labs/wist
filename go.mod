@@ -1,4 +1,4 @@
-module github.com/abs3ntdev/wist
+module github.com/gfx-labs/wist
 
 go 1.27.3
 
