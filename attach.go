@@ -200,12 +200,13 @@ func (u *UI) pasteImage() {
 		u.notify("this agent does not accept images")
 		return
 	}
-	u.notify("reading clipboard…")
 	go func() {
 		a, err := clipboardImage()
 		u.post(func(u *UI) {
 			if err != nil {
-				u.notify(err.Error())
+				// No display (SSH) or no image there: ask the terminal.
+				u.notify("reading the terminal clipboard (OSC 52)…")
+				u.requestClipboard(true)
 				return
 			}
 			u.attach(a)

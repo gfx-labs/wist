@@ -165,6 +165,9 @@ var localCommands = []localCmd{
 	{"split", "open a fork in a new tmux pane (/split new: fresh session)"},
 	{"stats", "files edited and lines changed this session"},
 	{"theme", "pick a color theme"},
+	{"edit", "compose the input in $VISUAL/$EDITOR"},
+	{"paste", "paste text from the terminal clipboard (OSC 52)"},
+	{"suspend", "suspend wist to the shell (fg resumes)"},
 	{"keys", "list key bindings"},
 	{"agents", "pick an agent from the ACP registry"},
 	{"cwd", "show the working directory"},
@@ -281,6 +284,10 @@ func (u *UI) handleEvent(ev tcell.Event) {
 	switch ev := ev.(type) {
 	case *tcell.EventResize:
 		u.sc.Sync()
+	case *tcell.EventFocus:
+		u.handleFocus(ev)
+	case *tcell.EventClipboard:
+		u.handleClipboard(ev)
 	case *tcell.EventPaste:
 		u.pasting = ev.Start()
 		if u.pasting {
@@ -570,6 +577,12 @@ func (u *UI) localCommand(text string) bool {
 		}
 	case "config", "settings":
 		u.pickConfig()
+	case "edit":
+		u.editInEditor()
+	case "paste":
+		u.requestClipboard(false)
+	case "suspend":
+		u.suspend()
 	case "clear":
 		u.blocks = nil
 		u.tools = map[acp.ToolCallId]*block{}

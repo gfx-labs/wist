@@ -34,6 +34,7 @@ type config struct {
 	agent     string
 	spawnHook string
 	theme     string
+	notify    string
 	colors    map[string]string
 	keys      map[string][]string
 	warnings  []string
@@ -104,6 +105,12 @@ func parseConfig(sc *bufio.Scanner) (config, error) {
 				c.spawnHook = one
 			case "theme":
 				c.theme = one
+			case "notify":
+				if validNotifyMode(one) {
+					c.notify = one
+				} else {
+					c.warnings = append(c.warnings, fmt.Sprintf("config line %d: notify must be auto, off, desktop or terminal", n))
+				}
 			default:
 				c.warnings = append(c.warnings, fmt.Sprintf("config line %d: unknown key %q", n, k))
 			}

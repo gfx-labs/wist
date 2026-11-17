@@ -81,6 +81,12 @@ type UI struct {
 	expandAll    bool
 	showThinking bool
 	planHidden   bool
+
+	// terminal
+	focused  bool
+	tick     *time.Ticker
+	clipWant string // "text" or "image" while an OSC 52 read is pending
+	clipAt   time.Time
 }
 
 func newUI(o options, cfg config) (*UI, error) {
@@ -92,6 +98,7 @@ func newUI(o options, cfg config) (*UI, error) {
 		return nil, err
 	}
 	sc.EnablePaste()
+	sc.EnableFocus()
 	if !o.noMouse {
 		sc.EnableMouse(tcell.MouseButtonEvents)
 	}
@@ -104,6 +111,8 @@ func newUI(o options, cfg config) (*UI, error) {
 		tools:  map[acp.ToolCallId]*block{},
 		cfg:    cfg,
 		keymap: buildKeymap(cfg.keys),
+		// Terminals without focus reporting never send events, so assume focus.
+		focused: true,
 	}
 	u.themeName = cfg.theme
 	if u.themeName == "" {
@@ -125,10 +134,17 @@ func (u *UI) loop() error {
 	stop := make(chan struct{})
 	defer close(stop)
 	go u.sc.ChannelEvents(events, stop)
-	tick := time.NewTicker(80 * time.Millisecond)
-	defer tick.Stop()
+	u.tick = time.NewTicker(u.tickInterval())
+	defer u.tick.Stop()
+	// Streaming updates draw at most once a frame. A pending frame timer
+	// fires the deferred draw.
+	var lastDraw time.Time
+	frame := time.NewTimer(time.Hour)
+	frame.Stop()
+	framePending := false
 	u.draw()
 	for !u.quit {
+		fromFuncs := false
 		select {
 		case ev, ok := <-events:
 			if !ok {
@@ -136,15 +152,23 @@ func (u *UI) loop() error {
 			}
 			u.handleEvent(ev)
 			// Drain whatever else is pending before drawing once.
-			for drained := false; !drained; {
+			// HasPendingEvent catches events tcell has parsed but not yet
+			// handed to the channel; the wait for them is bounded.
+			for waits := 0; ; {
 				select {
 				case ev := <-events:
 					u.handleEvent(ev)
+					continue
 				default:
-					drained = true
 				}
+				if waits >= 5 || u.quit || !u.sc.HasPendingEvent() {
+					break
+				}
+				waits++
+				time.Sleep(time.Millisecond)
 			}
 		case f := <-u.funcs:
+			fromFuncs = true
 			f(u)
 			for drained := false; !drained; {
 				select {
@@ -154,7 +178,9 @@ func (u *UI) loop() error {
 					drained = true
 				}
 			}
-		case <-tick.C:
+		case <-frame.C:
+			framePending = false
+		case <-u.tick.C:
 			if !u.busy && len(u.perms) == 0 && u.flash == "" {
 				continue
 			}
@@ -162,9 +188,34 @@ func (u *UI) loop() error {
 				u.flash = ""
 			}
 		}
+		if u.quit {
+			break
+		}
+		if fromFuncs {
+			if framePending {
+				continue
+			}
+			if wait := frameWait(lastDraw, time.Now()); wait > 0 {
+				framePending = true
+				frame.Reset(wait)
+				continue
+			}
+		}
 		u.draw()
+		lastDraw = time.Now()
 	}
 	return nil
+}
+
+// frameInterval caps streaming redraws at about 60 per second.
+const frameInterval = 16 * time.Millisecond
+
+// frameWait is how long to defer a draw so draws stay frameInterval apart.
+func frameWait(last, now time.Time) time.Duration {
+	if d := now.Sub(last); d < frameInterval {
+		return frameInterval - d
+	}
+	return 0
 }
 
 func (u *UI) notify(msg string) {
@@ -515,6 +566,9 @@ func (u *UI) endTurn(id acp.SessionId, resp acp.PromptResponse, err error) {
 		} else {
 			u.info(msg)
 		}
+		if len(u.queue) == 0 {
+			u.alert("turn finished: " + msg)
+		}
 	}
 	u.sendQueued()
 }
@@ -543,7 +597,11 @@ type permission struct {
 
 func (u *UI) askPermission(p acp.RequestPermissionRequest, answer chan acp.RequestPermissionOutcome) {
 	u.perms = append(u.perms, &permission{req: p, answer: answer})
-	u.sc.Beep()
+	title := "permission requested"
+	if p.ToolCall.Title != nil {
+		title += ": " + *p.ToolCall.Title
+	}
+	u.alert(title)
 }
 
 func (u *UI) dropPermission(answer chan acp.RequestPermissionOutcome) {

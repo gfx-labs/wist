@@ -34,6 +34,9 @@ func init() {
 		}},
 		{"newline", "insert a newline", []string{"ctrl+j"}, func(u *UI) { u.ed.insert("\n") }},
 		{"paste_image", "attach an image from the clipboard", []string{"ctrl+v", "alt+v"}, (*UI).pasteImage},
+		{"paste_text", "paste text from the terminal clipboard (OSC 52)", nil, func(u *UI) { u.requestClipboard(false) }},
+		{"edit_in_editor", "compose the input in $VISUAL/$EDITOR", []string{"alt+x"}, (*UI).editInEditor},
+		{"suspend", "suspend wist to the shell", []string{"ctrl+z"}, (*UI).suspend},
 		{"interrupt", "interrupt the turn, or scroll to the bottom", []string{"esc"}, func(u *UI) {
 			if u.busy {
 				u.cancelTurn()
