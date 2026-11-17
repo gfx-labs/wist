@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gfx-labs/wist/pkg/config"
+	"github.com/gfx-labs/wist/pkg/registry"
 	"github.com/gfx-labs/wist/pkg/tui"
 )
 
-func parseFlags(cfg tui.Config) tui.Options {
+func parseFlags(cfg config.Config) tui.Options {
 	var o tui.Options
 	var extra string
 	defTowa := cfg.Towa
@@ -29,7 +31,7 @@ func parseFlags(cfg tui.Config) tui.Options {
 	flag.StringVar(&o.Prompt, "p", "", "send this prompt as soon as the session is ready")
 	flag.BoolVar(&o.NoMouse, "no-mouse", false, "do not capture the mouse (keeps the terminal's own selection)")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: wist [flags] [-- agent args...]\n       wist agents    list agents in the ACP registry\n\nconfig: %s\n\n", tui.ConfigPath())
+		fmt.Fprintf(os.Stderr, "usage: wist [flags] [-- agent args...]\n       wist agents    list agents in the ACP registry\n\nconfig: %s\n\n", config.Path())
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -67,13 +69,13 @@ func parseFlags(cfg tui.Config) tui.Options {
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "agents" {
-		if err := tui.ListAgents(os.Stdout); err != nil {
+		if err := registry.List(os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, "wist:", err)
 			os.Exit(1)
 		}
 		return
 	}
-	cfg := tui.LoadConfig()
+	cfg := config.Load()
 	o := parseFlags(cfg)
 	if err := tui.Run(o, cfg); err != nil {
 		fmt.Fprintln(os.Stderr, "wist:", err)

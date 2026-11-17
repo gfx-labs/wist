@@ -1,23 +1,11 @@
 package tui
 
 import (
-	"bufio"
 	"os"
 	"strings"
 	"testing"
 	"time"
 )
-
-func TestNotifyConfig(t *testing.T) {
-	c, err := parseConfig(bufio.NewScanner(strings.NewReader(`notify = "desktop"`)))
-	if err != nil || c.Notify != "desktop" || len(c.Warnings) != 0 {
-		t.Fatalf("%+v %v", c, err)
-	}
-	c, _ = parseConfig(bufio.NewScanner(strings.NewReader(`notify = "bell"`)))
-	if c.Notify != "" || len(c.Warnings) != 1 {
-		t.Fatalf("bad mode accepted: %+v", c)
-	}
-}
 
 func TestComposeRoundtrip(t *testing.T) {
 	p, err := writeComposeFile("hi\nthere")

@@ -11,6 +11,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	acp "github.com/gfx-labs/go-acp"
+	"github.com/gfx-labs/wist/pkg/config"
 	"github.com/gfx-labs/wist/pkg/editor"
 	"github.com/gfx-labs/wist/pkg/render"
 )
@@ -53,7 +54,7 @@ type UI struct {
 	lastStop  string
 
 	// config, keys and theme
-	cfg       Config
+	cfg       config.Config
 	keymap    keymap
 	themeName string
 
@@ -91,7 +92,7 @@ type UI struct {
 	clipAt   time.Time
 }
 
-func newUI(o Options, cfg Config) (*UI, error) {
+func newUI(o Options, cfg config.Config) (*UI, error) {
 	sc, err := tcell.NewScreen()
 	if err != nil {
 		return nil, err

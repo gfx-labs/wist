@@ -15,6 +15,7 @@ import (
 	"time"
 
 	acp "github.com/gfx-labs/go-acp"
+	"github.com/gfx-labs/wist/pkg/config"
 	"github.com/gfx-labs/wist/pkg/registry"
 )
 
@@ -32,13 +33,10 @@ type Options struct {
 	NoMouse  bool     // leave the mouse to the terminal
 }
 
-// ListAgents writes the agents of the ACP registry to w.
-func ListAgents(w io.Writer) error { return registry.List(w) }
-
 // Run starts the agent process described by o, speaks ACP to it and runs
 // the terminal UI until the user quits. When o.Agent names a registry
 // agent it is resolved (and downloaded if needed) first.
-func Run(o Options, cfg Config) error {
+func Run(o Options, cfg config.Config) error {
 	if o.Agent != "" {
 		c, err := registry.Resolve(o.Agent, func(s string) { fmt.Fprintln(os.Stderr, "wist:", s) })
 		if err != nil {
@@ -51,7 +49,7 @@ func Run(o Options, cfg Config) error {
 	return run(o, cfg)
 }
 
-func run(o Options, cfg Config) error {
+func run(o Options, cfg config.Config) error {
 	if err := os.MkdirAll(filepath.Dir(o.Log), 0o755); err != nil {
 		return err
 	}

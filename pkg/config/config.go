@@ -1,4 +1,5 @@
-package tui
+// Package config reads ~/.config/wist/config.toml.
+package config
 
 import (
 	"bufio"
@@ -9,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/gfx-labs/wist/pkg/notify"
-	"github.com/gfx-labs/wist/pkg/render"
 )
 
 // Config is ~/.config/wist/config.toml. Only a small TOML subset is
@@ -40,8 +40,8 @@ type Config struct {
 	Warnings  []string            // problems found while loading
 }
 
-// ConfigPath is the path of the config file, under $XDG_CONFIG_HOME.
-func ConfigPath() string {
+// Path is the path of the config file, under $XDG_CONFIG_HOME.
+func Path() string {
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {
 		home, _ := os.UserHomeDir()
@@ -50,10 +50,10 @@ func ConfigPath() string {
 	return filepath.Join(dir, "wist", "config.toml")
 }
 
-// LoadConfig reads the config file. Problems are reported in Warnings,
+// Load reads the config file. Problems are reported in Warnings,
 // never as an error, so a bad config still starts wist.
-func LoadConfig() Config {
-	p := ConfigPath()
+func Load() Config {
+	p := Path()
 	f, err := os.Open(p)
 	if err != nil {
 		if yml := strings.TrimSuffix(p, ".toml") + ".yaml"; fileExists(yml) {
@@ -62,7 +62,7 @@ func LoadConfig() Config {
 		return Config{}
 	}
 	defer f.Close()
-	c, err := parseConfig(bufio.NewScanner(f))
+	c, err := parse(bufio.NewScanner(f))
 	if err != nil {
 		c.Warnings = append(c.Warnings, fmt.Sprintf("config %s: %v", p, err))
 	}
@@ -71,7 +71,7 @@ func LoadConfig() Config {
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
 
-func parseConfig(sc *bufio.Scanner) (Config, error) {
+func parse(sc *bufio.Scanner) (Config, error) {
 	c := Config{Colors: map[string]string{}, Keys: map[string][]string{}}
 	section := ""
 	n := 0
@@ -208,33 +208,3 @@ func scalar(s string) (val, rest string, err error) {
 }
 
 // --- themes -------------------------------------------------------------
-
-func (u *UI) pickTheme() {
-	var items []pickItem
-	sel := 0
-	for i, n := range render.ThemeNames() {
-		if n == u.themeName {
-			sel = i
-		}
-		items = append(items, pickItem{label: n, value: n, current: n == u.themeName})
-	}
-	u.openPicker("theme", items, sel, func(it pickItem) { u.setTheme(it.value) })
-}
-
-func (u *UI) setTheme(name string) {
-	if !render.HasTheme(name) {
-		u.errorf("unknown theme %q (have %s)", name, strings.Join(render.ThemeNames(), ", "))
-		return
-	}
-	// Explicit color overrides from the config still apply on top.
-	for _, w := range render.ApplyTheme(name, u.cfg.Colors) {
-		u.notify(w)
-	}
-	u.themeName = name
-	for _, b := range u.blocks {
-		b.dirty()
-	}
-	u.sc.Sync()
-	renderSynced()
-	u.notify("theme → " + name)
-}
