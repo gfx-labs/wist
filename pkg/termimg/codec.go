@@ -1,4 +1,8 @@
-package tui
+// Package termimg encodes images for terminals: decoding and scaling,
+// kitty graphics commands with tmux passthrough and unicode placeholders,
+// sixel and half-block cells, and protocol detection. It does no terminal
+// I/O itself.
+package termimg
 
 import (
 	"bytes"
@@ -14,17 +18,13 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
-// Pure image encoding helpers for the side panel: decoding and scaling,
-// kitty graphics commands, tmux passthrough, unicode placeholders, sixel
-// and half-block cells. They do no terminal I/O so they are easy to test.
-
 // maxDecodePixels bounds images wist decodes itself. A decoded RGBA image
 // takes 4 bytes a pixel, and wist must stay small.
 const maxDecodePixels = 4 << 20
 
-// decodeScaled decodes data and scales it to fit in maxW x maxH pixels,
+// DecodeScaled decodes data and scales it to fit in maxW x maxH pixels,
 // keeping the aspect ratio. It never scales up.
-func decodeScaled(data []byte, maxW, maxH int) (*image.RGBA, error) {
+func DecodeScaled(data []byte, maxW, maxH int) (*image.RGBA, error) {
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
@@ -36,12 +36,12 @@ func decodeScaled(data []byte, maxW, maxH int) (*image.RGBA, error) {
 	if err != nil {
 		return nil, err
 	}
-	w, h := fitSize(cfg.Width, cfg.Height, maxW, maxH)
+	w, h := FitSize(cfg.Width, cfg.Height, maxW, maxH)
 	return scaleBox(src, w, h), nil
 }
 
-// fitSize scales w x h down to fit in maxW x maxH, keeping the aspect.
-func fitSize(w, h, maxW, maxH int) (int, int) {
+// FitSize scales w x h down to fit in maxW x maxH, keeping the aspect.
+func FitSize(w, h, maxW, maxH int) (int, int) {
 	if w <= 0 || h <= 0 {
 		return 1, 1
 	}
@@ -83,7 +83,7 @@ func scaleBox(src image.Image, w, h int) *image.RGBA {
 	return dst
 }
 
-func encodePNG(img image.Image) []byte {
+func EncodePNG(img image.Image) []byte {
 	var b bytes.Buffer
 	enc := png.Encoder{CompressionLevel: png.BestSpeed}
 	_ = enc.Encode(&b, img)
@@ -94,9 +94,9 @@ func encodePNG(img image.Image) []byte {
 
 const kittyChunk = 4096
 
-// kittyTransmit returns the APC commands that upload png data as image id,
+// KittyTransmit returns the APC commands that upload png data as image id,
 // base64 encoded in 4096 byte chunks, with responses suppressed.
-func kittyTransmit(id uint32, pngData []byte) []string {
+func KittyTransmit(id uint32, pngData []byte) []string {
 	enc := base64.StdEncoding.EncodeToString(pngData)
 	var out []string
 	for first := true; first || enc != ""; first = false {
@@ -116,18 +116,18 @@ func kittyTransmit(id uint32, pngData []byte) []string {
 	return out
 }
 
-// kittyPlace places image id over cols x rows cells at the cursor without
+// KittyPlace places image id over cols x rows cells at the cursor without
 // moving it. virtual makes a unicode placeholder placement.
-func kittyPlace(id uint32, cols, rows int, virtual bool) string {
+func KittyPlace(id uint32, cols, rows int, virtual bool) string {
 	if virtual {
 		return fmt.Sprintf("\x1b_Ga=p,U=1,i=%d,c=%d,r=%d,q=2\x1b\\", id, cols, rows)
 	}
 	return fmt.Sprintf("\x1b_Ga=p,i=%d,p=1,c=%d,r=%d,C=1,q=2\x1b\\", id, cols, rows)
 }
 
-// kittyDelete removes the placements of id (keeping its data) or, with
+// KittyDelete removes the placements of id (keeping its data) or, with
 // free, the image itself.
-func kittyDelete(id uint32, free bool) string {
+func KittyDelete(id uint32, free bool) string {
 	d := "i"
 	if free {
 		d = "I"
@@ -135,31 +135,31 @@ func kittyDelete(id uint32, free bool) string {
 	return fmt.Sprintf("\x1b_Ga=d,d=%s,i=%d,q=2\x1b\\", d, id)
 }
 
-// tmuxWrap wraps an escape sequence in tmux's DCS passthrough, doubling
+// TmuxWrap wraps an escape sequence in tmux's DCS passthrough, doubling
 // its escapes.
-func tmuxWrap(s string) string {
+func TmuxWrap(s string) string {
 	return "\x1bPtmux;" + strings.ReplaceAll(s, "\x1b", "\x1b\x1b") + "\x1b\\"
 }
 
 const placeholderRune = 0x10EEEE
 
-// placeholderCell returns the runes of the unicode placeholder cell at row,
+// PlaceholderCell returns the runes of the unicode placeholder cell at row,
 // col: U+10EEEE followed by the row and column diacritics.
-func placeholderCell(row, col int) []rune {
+func PlaceholderCell(row, col int) []rune {
 	n := len(kittyDiacritics)
 	return []rune{placeholderRune, kittyDiacritics[min(row, n-1)], kittyDiacritics[min(col, n-1)]}
 }
 
-// idColor is the 24-bit foreground that names image id for placeholders.
-func idColor(id uint32) (r, g, b int32) {
+// IDColor is the 24-bit foreground that names image id for placeholders.
+func IDColor(id uint32) (r, g, b int32) {
 	return int32(id >> 16 & 0xff), int32(id >> 8 & 0xff), int32(id & 0xff)
 }
 
 // --- sixel -------------------------------------------------------------------
 
-// sixelEncode encodes img as sixel with the 6x6x6 color cube. Pixels with
+// SixelEncode encodes img as sixel with the 6x6x6 color cube. Pixels with
 // alpha below half are left transparent.
-func sixelEncode(img *image.RGBA) string {
+func SixelEncode(img *image.RGBA) string {
 	b := img.Bounds()
 	w, h := b.Dx(), b.Dy()
 	var sb strings.Builder
@@ -243,19 +243,19 @@ func sixelRLE(sb *strings.Builder, row []byte) {
 
 // --- half blocks -------------------------------------------------------------
 
-// halfCell is one "▀" cell: top pixel as foreground, bottom as background.
-type halfCell struct{ top, bot color.RGBA }
+// HalfCell is one "▀" cell: top pixel as foreground, bottom as background.
+type HalfCell struct{ Top, Bot color.RGBA }
 
-// halfBlocks downscales data to at most cols x rows cells of two pixels
+// HalfBlocks downscales data to at most cols x rows cells of two pixels
 // each, keeping the aspect ratio for cells about twice as tall as wide.
-func halfBlocks(img *image.RGBA, cols, rows int) [][]halfCell {
+func HalfBlocks(img *image.RGBA, cols, rows int) [][]HalfCell {
 	b := img.Bounds()
-	w, h := fitSize(b.Dx(), b.Dy(), cols, rows*2)
+	w, h := FitSize(b.Dx(), b.Dy(), cols, rows*2)
 	small := img
 	if w != b.Dx() || h != b.Dy() {
 		small = scaleBox(img, w, h)
 	}
-	out := make([][]halfCell, (h+1)/2)
+	out := make([][]HalfCell, (h+1)/2)
 	px := func(x, y int) color.RGBA {
 		if y >= h {
 			return color.RGBA{}
@@ -265,9 +265,9 @@ func halfBlocks(img *image.RGBA, cols, rows int) [][]halfCell {
 		return color.RGBA{p[0], p[1], p[2], p[3]}
 	}
 	for r := range out {
-		out[r] = make([]halfCell, w)
+		out[r] = make([]HalfCell, w)
 		for x := 0; x < w; x++ {
-			out[r][x] = halfCell{px(x, 2*r), px(x, 2*r+1)}
+			out[r][x] = HalfCell{px(x, 2*r), px(x, 2*r+1)}
 		}
 	}
 	return out

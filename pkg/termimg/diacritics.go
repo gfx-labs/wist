@@ -1,6 +1,6 @@
 // Code generated from kitty rowcolumn-diacritics.txt. DO NOT EDIT.
 
-package tui
+package termimg
 
 // kittyDiacritics encode row and column numbers of kitty unicode
 // placeholder cells (index n = number n).

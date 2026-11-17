@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"image"
 	"io"
-	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/gfx-labs/wist/pkg/termimg"
 )
 
 // Side panel image display. The protocol is picked from the environment
@@ -21,20 +20,11 @@ import (
 //   - sixel for foot, xterm, mlterm and contour, over locked cells.
 //   - half blocks ("▀" with two colors) everywhere else.
 
-type gfxProto int
-
-const (
-	gfxOff gfxProto = iota
-	gfxBlocks
-	gfxKitty
-	gfxSixel
-)
-
 type rect struct{ x, y, w, h int }
 
 type gfxState struct {
 	inited bool
-	proto  gfxProto
+	proto  termimg.Protocol
 	tmux   bool
 	sc     tcell.Screen
 
@@ -57,63 +47,31 @@ type gfxState struct {
 
 var gfx gfxState
 
-func detectProto() (gfxProto, bool) {
-	tmux := os.Getenv("TMUX") != ""
-	switch strings.ToLower(os.Getenv("WIST_IMAGES")) {
-	case "off", "none", "0":
-		return gfxOff, tmux
-	case "blocks", "halfblocks", "ansi":
-		return gfxBlocks, tmux
-	case "kitty":
-		return gfxKitty, tmux
-	case "sixel":
-		return gfxSixel, tmux
-	}
-	term, prog := os.Getenv("TERM"), strings.ToLower(os.Getenv("TERM_PROGRAM"))
-	if tmux {
-		// TERM and TERM_PROGRAM name tmux here: ask it for the outer terminal.
-		out, _ := exec.Command("tmux", "display", "-p", "#{client_termname}\t#{client_termtype}").Output()
-		name, typ, _ := strings.Cut(strings.TrimSpace(string(out)), "\t")
-		term, prog = name, strings.ToLower(strings.Fields(typ + " ")[0])
-	}
-	switch {
-	case strings.Contains(term, "kitty"), strings.Contains(term, "ghostty"),
-		prog == "ghostty", prog == "wezterm",
-		os.Getenv("KITTY_WINDOW_ID") != "", os.Getenv("GHOSTTY_RESOURCES_DIR") != "",
-		os.Getenv("WEZTERM_EXECUTABLE") != "":
-		return gfxKitty, tmux
-	case strings.HasPrefix(term, "foot"), strings.Contains(term, "mlterm"), strings.Contains(term, "contour"),
-		os.Getenv("XTERM_VERSION") != "":
-		return gfxSixel, tmux
-	}
-	return gfxBlocks, tmux
-}
-
 func (g *gfxState) init(sc tcell.Screen) {
 	g.sc = sc
 	if g.inited {
 		return
 	}
 	g.inited = true
-	g.proto, g.tmux = detectProto()
+	g.proto, g.tmux = termimg.Detect()
 	g.uploaded, g.placed = map[uint32]bool{}, map[uint32]string{}
-	if g.proto != gfxOff && g.proto != gfxBlocks {
+	if g.proto != termimg.Off && g.proto != termimg.Blocks {
 		if _, ok := sc.Tty(); !ok {
-			g.proto = gfxBlocks
+			g.proto = termimg.Blocks
 		}
 	}
 }
 
 func (g *gfxState) protoName() string {
 	switch g.proto {
-	case gfxKitty:
+	case termimg.Kitty:
 		if g.tmux {
 			return "kitty (tmux placeholders)"
 		}
 		return "kitty"
-	case gfxSixel:
+	case termimg.Sixel:
 		return "sixel"
-	case gfxBlocks:
+	case termimg.Blocks:
 		return "half blocks"
 	}
 	return "off"
@@ -132,7 +90,7 @@ func (g *gfxState) write(seqs ...string) {
 	var b strings.Builder
 	for _, s := range seqs {
 		if g.tmux {
-			s = tmuxWrap(s)
+			s = termimg.TmuxWrap(s)
 		}
 		b.WriteString(s)
 	}
@@ -153,7 +111,7 @@ func (g *gfxState) cellSize() (int, int) {
 // forget frees an evicted image in the terminal.
 func (g *gfxState) forget(im *storedImage) {
 	if g.uploaded[im.id] {
-		g.write(kittyDelete(im.id, true))
+		g.write(termimg.KittyDelete(im.id, true))
 		delete(g.uploaded, im.id)
 		delete(g.placed, im.id)
 	}
@@ -197,9 +155,9 @@ func (g *gfxState) clearOverlay() {
 	if g.shown == "" {
 		return
 	}
-	if g.proto == gfxKitty {
+	if g.proto == termimg.Kitty {
 		for id := range g.uploaded {
-			g.write(kittyDelete(id, false))
+			g.write(termimg.KittyDelete(id, false))
 		}
 		clear(g.placed)
 	}
@@ -224,7 +182,7 @@ func (g *gfxState) invalidate() {
 func (g *gfxState) decoded(im *storedImage, maxW, maxH int) (*image.RGBA, error) {
 	key := fmt.Sprintf("%d:%dx%d", im.num, maxW, maxH)
 	if g.cacheKey != key {
-		g.cacheImg, g.cacheErr = decodeScaled(im.data, maxW, maxH)
+		g.cacheImg, g.cacheErr = termimg.DecodeScaled(im.data, maxW, maxH)
 		g.cacheKey, g.cacheSix = key, ""
 	}
 	return g.cacheImg, g.cacheErr
@@ -238,17 +196,17 @@ func (g *gfxState) drawImage(im *storedImage, r rect, covered bool) error {
 	}
 	sc := g.sc
 	switch g.proto {
-	case gfxOff:
+	case termimg.Off:
 		drawStr(sc, r.x, r.y, r.x+r.w, "image display is off (WIST_IMAGES)", stFaint.Italic(true))
 		return nil
-	case gfxBlocks:
+	case termimg.Blocks:
 		img, err := g.decoded(im, r.w, r.h*2)
 		if err != nil {
 			return err
 		}
-		for y, row := range halfBlocks(img, r.w, r.h) {
+		for y, row := range termimg.HalfBlocks(img, r.w, r.h) {
 			for x, c := range row {
-				st := tcell.StyleDefault.Foreground(rgbaColor(c.top)).Background(rgbaColor(c.bot))
+				st := tcell.StyleDefault.Foreground(rgbaColor(c.Top)).Background(rgbaColor(c.Bot))
 				sc.SetContent(r.x+x, r.y+y, '▀', nil, st)
 			}
 		}
@@ -264,14 +222,14 @@ func (g *gfxState) drawImage(im *storedImage, r rect, covered bool) error {
 		iw, ih = cfg.Width, cfg.Height
 		im.w, im.h = iw, ih
 	}
-	fw, fh := fitSize(iw, ih, r.w*cw, r.h*ch)
-	if g.proto == gfxKitty {
+	fw, fh := termimg.FitSize(iw, ih, r.w*cw, r.h*ch)
+	if g.proto == termimg.Kitty {
 		// The terminal scales placements for free: let small images grow
 		// up to 4x to use the panel.
-		fw, fh = fitSize(iw*4, ih*4, r.w*cw, r.h*ch)
+		fw, fh = termimg.FitSize(iw*4, ih*4, r.w*cw, r.h*ch)
 	}
 	cols, rows := min(r.w, (fw+cw-1)/cw), min(r.h, (fh+ch-1)/ch)
-	if g.proto == gfxSixel {
+	if g.proto == termimg.Sixel {
 		if covered {
 			return nil
 		}
@@ -280,7 +238,7 @@ func (g *gfxState) drawImage(im *storedImage, r rect, covered bool) error {
 			return err
 		}
 		if g.cacheSix == "" {
-			g.cacheSix = sixelEncode(img)
+			g.cacheSix = termimg.SixelEncode(img)
 		}
 		six := g.cacheSix
 		g.want, g.wantAt = "s"+g.cacheKey, rect{r.x, r.y, cols, rows}
@@ -291,26 +249,26 @@ func (g *gfxState) drawImage(im *storedImage, r rect, covered bool) error {
 	if !g.uploaded[im.id] {
 		data := im.data
 		if im.mime != "image/png" || iw*ih > r.w*cw*r.h*ch*2 {
-			img, err := decodeScaled(im.data, r.w*cw, r.h*ch)
+			img, err := termimg.DecodeScaled(im.data, r.w*cw, r.h*ch)
 			if err != nil {
 				return err
 			}
-			data = encodePNG(img)
+			data = termimg.EncodePNG(img)
 		}
-		g.write(kittyTransmit(im.id, data)...)
+		g.write(termimg.KittyTransmit(im.id, data)...)
 		g.uploaded[im.id] = true
 	}
 	if g.tmux {
 		key := fmt.Sprintf("%dx%d", cols, rows)
 		if g.placed[im.id] != key {
-			g.write(kittyPlace(im.id, cols, rows, true))
+			g.write(termimg.KittyPlace(im.id, cols, rows, true))
 			g.placed[im.id] = key
 		}
-		cr, cg, cb := idColor(im.id)
+		cr, cg, cb := termimg.IDColor(im.id)
 		st := tcell.StyleDefault.Foreground(tcell.NewRGBColor(cr, cg, cb))
 		for y := 0; y < rows; y++ {
 			for x := 0; x < cols; x++ {
-				c := placeholderCell(y, x)
+				c := termimg.PlaceholderCell(y, x)
 				sc.SetContent(r.x+x, r.y+y, c[0], c[1:], st)
 			}
 		}
@@ -321,7 +279,7 @@ func (g *gfxState) drawImage(im *storedImage, r rect, covered bool) error {
 	}
 	id := im.id
 	g.want, g.wantAt = fmt.Sprintf("k%d:%dx%d", id, cols, rows), rect{r.x, r.y, cols, rows}
-	g.wantFn = func(w io.Writer) { _, _ = io.WriteString(w, kittyPlace(id, cols, rows, false)) }
+	g.wantFn = func(w io.Writer) { _, _ = io.WriteString(w, termimg.KittyPlace(id, cols, rows, false)) }
 	return nil
 }
 
