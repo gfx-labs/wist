@@ -488,7 +488,7 @@ func (u *UI) submit(text string) {
 	}
 	shown := text
 	for _, a := range u.images {
-		shown += "\n🖼 " + a.label()
+		shown += "\n" + u.storeAttachment(a)
 	}
 	u.addBlock(&block{kind: kindUser, text: shown})
 	u.startTurn(text)
