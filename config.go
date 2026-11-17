@@ -323,5 +323,6 @@ func (u *UI) setTheme(name string) {
 		b.dirty()
 	}
 	u.sc.Sync()
+	renderSynced()
 	u.notify("theme → " + name)
 }

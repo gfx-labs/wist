@@ -137,6 +137,7 @@ func (u *UI) suspend() {
 	}
 	_ = u.sc.Resume()
 	u.sc.Sync()
+	renderSynced()
 }
 
 // --- $EDITOR -------------------------------------------------------------
@@ -188,6 +189,7 @@ func (u *UI) editInEditor() {
 	runErr := cmd.Run()
 	_ = u.sc.Resume()
 	u.sc.Sync()
+	renderSynced()
 	if runErr != nil {
 		u.notify("editor: " + runErr.Error())
 		return

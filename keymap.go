@@ -68,7 +68,7 @@ func init() {
 			u.notify(fmt.Sprintf("show thinking: %v", u.showThinking))
 		}},
 		{"toggle_plan", "toggle the plan panel", []string{"alt+p"}, func(u *UI) { u.planHidden = !u.planHidden }},
-		{"redraw", "redraw the screen", []string{"ctrl+l"}, func(u *UI) { u.sc.Sync() }},
+		{"redraw", "redraw the screen", []string{"ctrl+l"}, func(u *UI) { u.sc.Sync(); renderSynced() }},
 		{"scroll_up", "scroll up half a page", []string{"pgup"}, func(u *UI) { u.scroll += u.pageSize() }},
 		{"scroll_down", "scroll down half a page", []string{"pgdn"}, func(u *UI) { u.scroll = max(0, u.scroll-u.pageSize()) }},
 		{"fork", "fork the session", nil, func(u *UI) { u.forkSession() }},

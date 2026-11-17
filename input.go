@@ -284,6 +284,7 @@ func (u *UI) handleEvent(ev tcell.Event) {
 	switch ev := ev.(type) {
 	case *tcell.EventResize:
 		u.sc.Sync()
+		renderSynced()
 	case *tcell.EventFocus:
 		u.handleFocus(ev)
 	case *tcell.EventClipboard:
