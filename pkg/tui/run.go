@@ -15,6 +15,7 @@ import (
 	"time"
 
 	acp "github.com/gfx-labs/go-acp"
+	"github.com/gfx-labs/wist/pkg/registry"
 )
 
 // Options holds the command line settings for one wist session.
@@ -32,20 +33,20 @@ type Options struct {
 }
 
 // ListAgents writes the agents of the ACP registry to w.
-func ListAgents(w io.Writer) error { return listAgents(w) }
+func ListAgents(w io.Writer) error { return registry.List(w) }
 
 // Run starts the agent process described by o, speaks ACP to it and runs
 // the terminal UI until the user quits. When o.Agent names a registry
 // agent it is resolved (and downloaded if needed) first.
 func Run(o Options, cfg Config) error {
 	if o.Agent != "" {
-		c, err := resolveAgent(o.Agent, func(s string) { fmt.Fprintln(os.Stderr, "wist:", s) })
+		c, err := registry.Resolve(o.Agent, func(s string) { fmt.Fprintln(os.Stderr, "wist:", s) })
 		if err != nil {
 			return err
 		}
-		o.Towa = c.path
-		o.Args = append(append([]string{}, c.args...), o.Args...)
-		o.Env = c.env
+		o.Towa = c.Path
+		o.Args = append(append([]string{}, c.Args...), o.Args...)
+		o.Env = c.Env
 	}
 	return run(o, cfg)
 }

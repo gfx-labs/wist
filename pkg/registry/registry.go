@@ -1,4 +1,7 @@
-package tui
+// Package registry fetches the ACP agent registry, caches it, and resolves
+// an agent id to a runnable command, downloading and verifying binary
+// distributions when needed.
+package registry
 
 import (
 	"archive/tar"
@@ -21,25 +24,29 @@ import (
 
 const registryURL = "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json"
 
-type registry struct {
-	Agents []regAgent `json:"agents"`
+// Registry is the parsed ACP registry document.
+type Registry struct {
+	Agents []Agent `json:"agents"`
 }
 
-type regAgent struct {
-	ID           string          `json:"id"`
-	Name         string          `json:"name"`
-	Version      string          `json:"version"`
-	Description  string          `json:"description"`
-	Distribution regDistribution `json:"distribution"`
+// Agent is one registry entry.
+type Agent struct {
+	ID           string       `json:"id"`
+	Name         string       `json:"name"`
+	Version      string       `json:"version"`
+	Description  string       `json:"description"`
+	Distribution Distribution `json:"distribution"`
 }
 
-type regDistribution struct {
-	Binary map[string]regBinary `json:"binary,omitempty"`
-	Npx    *regPackage          `json:"npx,omitempty"`
-	Uvx    *regPackage          `json:"uvx,omitempty"`
+// Distribution lists the ways an agent can be run.
+type Distribution struct {
+	Binary map[string]Binary `json:"binary,omitempty"`
+	Npx    *Package          `json:"npx,omitempty"`
+	Uvx    *Package          `json:"uvx,omitempty"`
 }
 
-type regBinary struct {
+// Binary is a downloadable archive for one platform.
+type Binary struct {
 	Archive string            `json:"archive"`
 	Sha256  string            `json:"sha256"`
 	Cmd     string            `json:"cmd"`
@@ -47,20 +54,21 @@ type regBinary struct {
 	Env     map[string]string `json:"env"`
 }
 
-type regPackage struct {
+// Package is an npx or uvx package distribution.
+type Package struct {
 	Package string            `json:"package"`
 	Args    []string          `json:"args"`
 	Env     map[string]string `json:"env"`
 }
 
-// agentCmd is how to start an agent.
-type agentCmd struct {
-	path string
-	args []string
-	env  []string
-	dir  string // set for downloaded binaries
+// Command is how to start an agent.
+type Command struct {
+	Path string
+	Args []string
+	Env  []string
+	Dir  string // set for downloaded binaries
 	// fetch, when set, must run before the command exists on disk.
-	fetch *regBinary
+	fetch *Binary
 }
 
 func cacheDir() string {
@@ -74,9 +82,9 @@ func cacheDir() string {
 
 var httpClient = &http.Client{Timeout: 60 * time.Second}
 
-// loadRegistry returns the registry, from a cache younger than an hour
+// Load returns the registry, from a cache younger than an hour
 // when possible. A stale cache is used if the network fails.
-func loadRegistry() (*registry, error) {
+func Load() (*Registry, error) {
 	p := filepath.Join(cacheDir(), "registry.json")
 	st, statErr := os.Stat(p)
 	if statErr == nil && time.Since(st.ModTime()) < time.Hour {
@@ -94,13 +102,13 @@ func loadRegistry() (*registry, error) {
 	return readRegistry(p)
 }
 
-func readRegistry(p string) (*registry, error) {
+func readRegistry(p string) (*Registry, error) {
 	f, err := os.Open(p)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	var r registry
+	var r Registry
 	if err := json.NewDecoder(f).Decode(&r); err != nil {
 		return nil, err
 	}
@@ -139,7 +147,7 @@ func fetchTo(url, path string, limit int64) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-func (r *registry) find(id string) *regAgent {
+func (r *Registry) find(id string) *Agent {
 	for i := range r.Agents {
 		if r.Agents[i].ID == id {
 			return &r.Agents[i]
@@ -157,7 +165,7 @@ func platformKey(goos, goarch string) string {
 	return goos + "-" + arch
 }
 
-func (a *regAgent) kinds() string {
+func (a *Agent) kinds() string {
 	var k []string
 	if len(a.Distribution.Binary) > 0 {
 		k = append(k, "binary")
@@ -173,15 +181,15 @@ func (a *regAgent) kinds() string {
 
 // resolve picks how to run the agent on goos/goarch. A binary for this
 // platform is preferred, then npx, then uvx.
-func (a *regAgent) resolve(goos, goarch string) (agentCmd, error) {
+func (a *Agent) resolve(goos, goarch string) (Command, error) {
 	d := a.Distribution
 	if b, ok := d.Binary[platformKey(goos, goarch)]; ok && b.Archive != "" && b.Cmd != "" {
 		dir := filepath.Join(cacheDir(), "agents", a.ID, a.Version)
 		bin := filepath.Clean(filepath.Join(dir, b.Cmd))
 		if !strings.HasPrefix(bin, dir+string(filepath.Separator)) {
-			return agentCmd{}, fmt.Errorf("%s: cmd %q escapes its directory", a.ID, b.Cmd)
+			return Command{}, fmt.Errorf("%s: cmd %q escapes its directory", a.ID, b.Cmd)
 		}
-		c := agentCmd{path: bin, args: b.Args, env: envList(b.Env), dir: dir}
+		c := Command{Path: bin, Args: b.Args, Env: envList(b.Env), Dir: dir}
 		if !fileExists(bin) {
 			bb := b
 			c.fetch = &bb
@@ -189,12 +197,12 @@ func (a *regAgent) resolve(goos, goarch string) (agentCmd, error) {
 		return c, nil
 	}
 	if p := d.Npx; p != nil && p.Package != "" {
-		return agentCmd{path: "npx", args: append([]string{"-y", p.Package}, p.Args...), env: envList(p.Env)}, nil
+		return Command{Path: "npx", Args: append([]string{"-y", p.Package}, p.Args...), Env: envList(p.Env)}, nil
 	}
 	if p := d.Uvx; p != nil && p.Package != "" {
-		return agentCmd{path: "uvx", args: append([]string{p.Package}, p.Args...), env: envList(p.Env)}, nil
+		return Command{Path: "uvx", Args: append([]string{p.Package}, p.Args...), Env: envList(p.Env)}, nil
 	}
-	return agentCmd{}, fmt.Errorf("%s has no distribution for %s", a.ID, platformKey(goos, goarch))
+	return Command{}, fmt.Errorf("%s has no distribution for %s", a.ID, platformKey(goos, goarch))
 }
 
 func envList(m map[string]string) []string {
@@ -207,7 +215,7 @@ func envList(m map[string]string) []string {
 }
 
 // install downloads, verifies and unpacks a binary distribution into dir.
-func install(b *regBinary, dir string) error {
+func install(b *Binary, dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -356,38 +364,39 @@ func writeFile(p string, r io.Reader, mode os.FileMode) error {
 	return err
 }
 
-// resolveAgent turns an agent id into a command. "towa" (or empty) is the
+// Resolve turns an agent id into a command. "towa" (or empty) is the
 // built-in default; anything else is looked up in the registry and
 // installed if needed. progress gets a line before slow steps.
-func resolveAgent(id string, progress func(string)) (agentCmd, error) {
-	r, err := loadRegistry()
+func Resolve(id string, progress func(string)) (Command, error) {
+	r, err := Load()
 	if err != nil {
-		return agentCmd{}, err
+		return Command{}, err
 	}
 	a := r.find(id)
 	if a == nil {
-		return agentCmd{}, fmt.Errorf("unknown agent %q (see `wist agents`)", id)
+		return Command{}, fmt.Errorf("unknown agent %q (see `wist agents`)", id)
 	}
 	c, err := a.resolve(runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		return c, err
 	}
 	if c.fetch != nil {
-		progress(fmt.Sprintf("installing %s %s into %s", a.ID, a.Version, c.dir))
-		if err := install(c.fetch, c.dir); err != nil {
-			_ = os.RemoveAll(c.dir)
+		progress(fmt.Sprintf("installing %s %s into %s", a.ID, a.Version, c.Dir))
+		if err := install(c.fetch, c.Dir); err != nil {
+			_ = os.RemoveAll(c.Dir)
 			return c, fmt.Errorf("install %s: %w", a.ID, err)
 		}
 		c.fetch = nil
-		if !fileExists(c.path) {
-			return c, fmt.Errorf("install %s: %s not found in the archive", a.ID, c.path)
+		if !fileExists(c.Path) {
+			return c, fmt.Errorf("install %s: %s not found in the archive", a.ID, c.Path)
 		}
 	}
 	return c, nil
 }
 
-func listAgents(w io.Writer) error {
-	r, err := loadRegistry()
+// List writes a table of the registry agents, towa first, to w.
+func List(w io.Writer) error {
+	r, err := Load()
 	if err != nil {
 		return err
 	}
@@ -398,26 +407,4 @@ func listAgents(w io.Writer) error {
 	return nil
 }
 
-// pickAgent shows the registry. Choosing an agent opens it in a new pane
-// (or tells the user how to start it).
-func (u *UI) pickAgent() {
-	go func() {
-		r, err := loadRegistry()
-		u.post(func(u *UI) {
-			if err != nil {
-				u.errorf("%v", err)
-				return
-			}
-			items := []pickItem{{label: "towa", detail: "default", value: "towa", current: u.opts.Agent == "" || u.opts.Agent == "towa"}}
-			for _, a := range r.Agents {
-				items = append(items, pickItem{label: a.Name + " (" + a.ID + ")", detail: a.Version + " · " + a.Description, value: a.ID, current: a.ID == u.opts.Agent})
-			}
-			u.openPicker("ACP agents", items, 0, func(it pickItem) {
-				args := []string{"--agent", it.value}
-				if err := u.spawnPane(args); err != nil {
-					u.info(fmt.Sprintf("%v\nrun it with: wist --agent %s", err, it.value))
-				}
-			})
-		})
-	}()
-}
+func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
