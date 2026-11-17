@@ -1,4 +1,7 @@
-package tui
+// Package render turns text into styled screen lines: spans and lines,
+// wrapping and truncation, a streaming markdown renderer, syntax
+// highlighting, an ASCII mermaid renderer, and the color theme.
+package render
 
 import (
 	"regexp"
@@ -10,55 +13,58 @@ import (
 	"github.com/rivo/uniseg"
 )
 
-// Theme colors loosely follow jcode's dark palette.
+// Theme colors loosely follow jcode's dark palette. ApplyTheme replaces
+// them; the C prefix marks a color, St a style built from one.
 var (
-	cText    = tcell.NewRGBColor(0xd8, 0xdb, 0xe2)
-	cDim     = tcell.NewRGBColor(0x7a, 0x80, 0x8c)
-	cFaint   = tcell.NewRGBColor(0x4a, 0x4f, 0x5a)
-	cAccent  = tcell.NewRGBColor(0x8a, 0xb4, 0xf8)
-	cUser    = tcell.NewRGBColor(0xc3, 0xa6, 0xff)
-	cGreen   = tcell.NewRGBColor(0x8b, 0xd5, 0x8b)
-	cRed     = tcell.NewRGBColor(0xf2, 0x8b, 0x82)
-	cYellow  = tcell.NewRGBColor(0xf0, 0xc6, 0x74)
-	cCyan    = tcell.NewRGBColor(0x7d, 0xd3, 0xe0)
-	cOrange  = tcell.NewRGBColor(0xf5, 0xa9, 0x7f)
-	cCodeBg  = tcell.NewRGBColor(0x1e, 0x21, 0x27)
-	cPanelBg = tcell.NewRGBColor(0x23, 0x26, 0x2d)
-	cSelBg   = tcell.NewRGBColor(0x33, 0x3a, 0x4a)
-	cAddBg   = tcell.NewRGBColor(0x1c, 0x33, 0x23)
-	cDelBg   = tcell.NewRGBColor(0x3b, 0x1f, 0x22)
+	CText    = tcell.NewRGBColor(0xd8, 0xdb, 0xe2)
+	CDim     = tcell.NewRGBColor(0x7a, 0x80, 0x8c)
+	CFaint   = tcell.NewRGBColor(0x4a, 0x4f, 0x5a)
+	CAccent  = tcell.NewRGBColor(0x8a, 0xb4, 0xf8)
+	CUser    = tcell.NewRGBColor(0xc3, 0xa6, 0xff)
+	CGreen   = tcell.NewRGBColor(0x8b, 0xd5, 0x8b)
+	CRed     = tcell.NewRGBColor(0xf2, 0x8b, 0x82)
+	CYellow  = tcell.NewRGBColor(0xf0, 0xc6, 0x74)
+	CCyan    = tcell.NewRGBColor(0x7d, 0xd3, 0xe0)
+	COrange  = tcell.NewRGBColor(0xf5, 0xa9, 0x7f)
+	CCodeBg  = tcell.NewRGBColor(0x1e, 0x21, 0x27)
+	CPanelBg = tcell.NewRGBColor(0x23, 0x26, 0x2d)
+	CSelBg   = tcell.NewRGBColor(0x33, 0x3a, 0x4a)
+	CAddBg   = tcell.NewRGBColor(0x1c, 0x33, 0x23)
+	CDelBg   = tcell.NewRGBColor(0x3b, 0x1f, 0x22)
 )
 
+// Base styles derived from the theme colors, rebuilt by ApplyTheme.
 var (
-	stBase   = tcell.StyleDefault.Foreground(cText)
-	stDim    = tcell.StyleDefault.Foreground(cDim)
-	stFaint  = tcell.StyleDefault.Foreground(cFaint)
-	stAccent = tcell.StyleDefault.Foreground(cAccent)
-	stUser   = tcell.StyleDefault.Foreground(cUser)
-	stGreen  = tcell.StyleDefault.Foreground(cGreen)
-	stRed    = tcell.StyleDefault.Foreground(cRed)
-	stYellow = tcell.StyleDefault.Foreground(cYellow)
-	stCyan   = tcell.StyleDefault.Foreground(cCyan)
-	stCode   = tcell.StyleDefault.Foreground(cOrange)
+	StBase   = tcell.StyleDefault.Foreground(CText)
+	StDim    = tcell.StyleDefault.Foreground(CDim)
+	StFaint  = tcell.StyleDefault.Foreground(CFaint)
+	StAccent = tcell.StyleDefault.Foreground(CAccent)
+	StUser   = tcell.StyleDefault.Foreground(CUser)
+	StGreen  = tcell.StyleDefault.Foreground(CGreen)
+	StRed    = tcell.StyleDefault.Foreground(CRed)
+	StYellow = tcell.StyleDefault.Foreground(CYellow)
+	StCyan   = tcell.StyleDefault.Foreground(CCyan)
+	StCode   = tcell.StyleDefault.Foreground(COrange)
 )
 
-// codeRef locates a fenced code block in a rendered message: the index of
+// CodeRef locates a fenced code block in a rendered message: the index of
 // its header line, its language and its source. Only closed blocks get a
 // copy button.
-type codeRef struct {
-	line   int
-	lang   string
-	text   string
-	closed bool
+type CodeRef struct {
+	Line   int    // index of the header line
+	Lang   string // fence info string
+	Text   string // code without fences
+	Closed bool   // the closing fence has arrived
 }
 
-const copyLabel = "⧉ copy"
+// CopyLabel is the clickable copy button on a code block header.
+const CopyLabel = "⧉ copy"
 
-// markdown renders md into lines of at most width cells. It is a line
+// Markdown renders md into lines of at most width cells. It is a line
 // oriented renderer that copes with partial input, so it can be run on a
 // message while it streams.
-func markdown(md string, width int, base tcell.Style) []line {
-	out, _ := markdownDoc(md, width, base)
+func Markdown(md string, width int, base tcell.Style) []Line {
+	out, _ := MarkdownDoc(md, width, base)
 	return out
 }
 
@@ -72,9 +78,10 @@ type listCtx struct {
 
 var bullets = []string{"• ", "◦ ", "▪ ", "‣ "}
 
-func markdownDoc(md string, width int, base tcell.Style) ([]line, []codeRef) {
-	var out []line
-	var codes []codeRef
+// MarkdownDoc is Markdown that also reports the fenced code blocks.
+func MarkdownDoc(md string, width int, base tcell.Style) ([]Line, []CodeRef) {
+	var out []Line
+	var codes []CodeRef
 	lines := strings.Split(md, "\n")
 	refs := linkRefs(lines)
 	inCode := false
@@ -87,19 +94,19 @@ func markdownDoc(md string, width int, base tcell.Style) ([]line, []codeRef) {
 	contIndent := -1 // indent of text continuing the last list item
 	contPad := 0
 
-	codeBar := line{{"│ ", stFaint}}
-	header := func(lang string, closed bool) line {
+	codeBar := Line{{"│ ", StFaint}}
+	header := func(lang string, closed bool) Line {
 		label := "╭─"
 		if lang != "" {
 			label += " " + lang + " "
 		}
-		l := line{{label, stFaint}}
+		l := Line{{label, StFaint}}
 		if closed {
-			pad := width - l.width() - uniseg.StringWidth(copyLabel)
+			pad := width - l.Width() - uniseg.StringWidth(CopyLabel)
 			if pad < 1 {
 				return l
 			}
-			l = append(l, span{strings.Repeat("─", pad-1) + " ", stFaint}, span{copyLabel, stAccent})
+			l = append(l, Span{strings.Repeat("─", pad-1) + " ", StFaint}, Span{CopyLabel, StAccent})
 		}
 		return l
 	}
@@ -108,16 +115,16 @@ func markdownDoc(md string, width int, base tcell.Style) ([]line, []codeRef) {
 		if closed {
 			out[codeStart] = header(lang, true)
 			if strings.EqualFold(lang, "mermaid") {
-				if dia := mermaid(src); dia != nil {
+				if dia := Mermaid(src); dia != nil {
 					out = out[:codeStart+1]
 					for _, d := range dia {
-						out = append(out, cutLine(append(append(line{}, codeBar...), d...), width))
+						out = append(out, cutLine(append(append(Line{}, codeBar...), d...), width))
 					}
 				}
 			}
-			out = append(out, line{{"╰─", stFaint}})
+			out = append(out, Line{{"╰─", StFaint}})
 		}
-		codes = append(codes, codeRef{line: codeStart, lang: lang, text: src, closed: closed})
+		codes = append(codes, CodeRef{Line: codeStart, Lang: lang, Text: src, Closed: closed})
 		code = nil
 	}
 
@@ -133,9 +140,9 @@ func markdownDoc(md string, width int, base tcell.Style) ([]line, []codeRef) {
 			}
 			// Strip the fence's own indentation (list-nested code).
 			code = append(code, raw)
-			var hl []span
+			var hl []Span
 			hl, hlState = highlightLine(raw, lang, hlState)
-			out = append(out, wrap(hl, width, codeBar, codeBar)...)
+			out = append(out, Wrap(hl, width, codeBar, codeBar)...)
 			continue
 		}
 		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
@@ -150,7 +157,7 @@ func markdownDoc(md string, width int, base tcell.Style) ([]line, []codeRef) {
 
 		if trimmed == "" {
 			if len(out) > 0 && len(out[len(out)-1]) != 0 {
-				out = append(out, line{})
+				out = append(out, Line{})
 			}
 			continue
 		}
@@ -178,7 +185,7 @@ func markdownDoc(md string, width int, base tcell.Style) ([]line, []codeRef) {
 		}
 
 		if isRule(trimmed) {
-			out = append(out, line{{strings.Repeat("─", min(width, 40)), stFaint}})
+			out = append(out, Line{{strings.Repeat("─", min(width, 40)), StFaint}})
 			continue
 		}
 
@@ -194,12 +201,12 @@ func markdownDoc(md string, width int, base tcell.Style) ([]line, []codeRef) {
 
 		if strings.HasPrefix(trimmed, ">") {
 			text := strings.TrimSpace(strings.TrimLeft(trimmed, "> "))
-			bar := line{{"▎ ", stFaint}}
+			bar := Line{{"▎ ", StFaint}}
 			if text == "" {
 				out = append(out, bar)
 				continue
 			}
-			out = append(out, wrap(inlineRefs(text, base.Italic(true).Foreground(cDim), refs), width, bar, bar)...)
+			out = append(out, Wrap(inlineRefs(text, base.Italic(true).Foreground(CDim), refs), width, bar, bar)...)
 			continue
 		}
 
@@ -230,28 +237,28 @@ func markdownDoc(md string, width int, base tcell.Style) ([]line, []codeRef) {
 				marker = bullets[min(lv, len(bullets)-1)]
 			}
 			pad := strings.Repeat("  ", min(lv, 6))
-			mst := stAccent
+			mst := StAccent
 			if lv > 0 {
-				mst = stDim
+				mst = StDim
 			}
-			first := line{{pad + marker, mst}}
-			next := line{{pad + strings.Repeat(" ", uniseg.StringWidth(marker)), base}}
+			first := Line{{pad + marker, mst}}
+			next := Line{{pad + strings.Repeat(" ", uniseg.StringWidth(marker)), base}}
 			if strings.HasPrefix(rest, "[ ] ") {
-				first = line{{pad + "☐ ", stDim}}
+				first = Line{{pad + "☐ ", StDim}}
 				rest = rest[4:]
 			} else if strings.HasPrefix(rest, "[x] ") || strings.HasPrefix(rest, "[X] ") {
-				first = line{{pad + "☑ ", stGreen}}
+				first = Line{{pad + "☑ ", StGreen}}
 				rest = rest[4:]
 			}
-			contIndent, contPad = indent+1, next.width()
-			out = append(out, wrap(inlineRefs(rest, base, refs), width, first, next)...)
+			contIndent, contPad = indent+1, next.Width()
+			out = append(out, Wrap(inlineRefs(rest, base, refs), width, first, next)...)
 			continue
 		}
 
 		// Paragraph text. Indented text after a list item continues it.
 		if contIndent >= 0 && indent >= contIndent {
-			p := line{{strings.Repeat(" ", contPad), base}}
-			out = append(out, wrap(inlineRefs(trimmed, base, refs), width, p, p)...)
+			p := Line{{strings.Repeat(" ", contPad), base}}
+			out = append(out, Wrap(inlineRefs(trimmed, base, refs), width, p, p)...)
 			continue
 		}
 		if indent == 0 {
@@ -259,7 +266,7 @@ func markdownDoc(md string, width int, base tcell.Style) ([]line, []codeRef) {
 		}
 		// Model output means its single newlines, so each source line
 		// starts a new screen line.
-		out = append(out, wrap(inlineRefs(trimmed, base, refs), width, nil, nil)...)
+		out = append(out, Wrap(inlineRefs(trimmed, base, refs), width, nil, nil)...)
 	}
 	if inCode {
 		closeCode(false)
@@ -270,15 +277,15 @@ func markdownDoc(md string, width int, base tcell.Style) ([]line, []codeRef) {
 	return out, codes
 }
 
-func headingLines(text string, level, width int, base tcell.Style, refs map[string]string) []line {
-	st := base.Bold(true).Foreground(cAccent)
+func headingLines(text string, level, width int, base tcell.Style, refs map[string]string) []Line {
+	st := base.Bold(true).Foreground(CAccent)
 	if level > 2 {
 		st = base.Bold(true)
 	}
 	if level == 1 {
 		st = st.Underline(true)
 	}
-	return wrap(inlineRefs(text, st, refs), width, nil, nil)
+	return Wrap(inlineRefs(text, st, refs), width, nil, nil)
 }
 
 func setextLevel(s string) int {
@@ -295,18 +302,18 @@ func setextLevel(s string) int {
 }
 
 // cutLine truncates a rendered line to w cells.
-func cutLine(l line, w int) line {
-	var out line
+func cutLine(l Line, w int) Line {
+	var out Line
 	used := 0
 	for _, s := range l {
-		sw := uniseg.StringWidth(s.text)
+		sw := uniseg.StringWidth(s.Text)
 		if used+sw <= w {
 			out = append(out, s)
 			used += sw
 			continue
 		}
-		if t := truncate(s.text, w-used); t != "" {
-			out = append(out, span{t, s.st})
+		if t := Truncate(s.Text, w-used); t != "" {
+			out = append(out, Span{t, s.St})
 		}
 		break
 	}
@@ -357,11 +364,11 @@ func linkRefs(lines []string) map[string]string {
 
 // imageCard renders the image placeholder produced for image content
 // blocks as a clickable card.
-func imageCard(s string) (line, bool) {
-	if !strings.HasPrefix(s, imageMarker) {
+func imageCard(s string) (Line, bool) {
+	if !strings.HasPrefix(s, ImageMarker) {
 		return nil, false
 	}
-	return line{{" " + s + " ", tcell.StyleDefault.Foreground(cText).Background(cPanelBg)}}, true
+	return Line{{" " + s + " ", tcell.StyleDefault.Foreground(CText).Background(CPanelBg)}}, true
 }
 
 func headingLevel(s string) int {
@@ -406,14 +413,14 @@ func listItem(s string) (marker, rest string, ok bool) {
 }
 
 // inline styles `code`, **bold**, *italic*, ~~strike~~ and [links](url).
-func inline(s string, base tcell.Style) []span {
-	var out []span
+func inline(s string, base tcell.Style) []Span {
+	var out []Span
 	var b strings.Builder
 	st := base
 	bold, italic, strike := false, false, false
 	emit := func() {
 		if b.Len() > 0 {
-			out = append(out, span{b.String(), st})
+			out = append(out, Span{b.String(), st})
 			b.Reset()
 		}
 	}
@@ -433,7 +440,7 @@ func inline(s string, base tcell.Style) []span {
 				continue
 			}
 			emit()
-			out = append(out, span{s[i+1 : i+1+end], stCode})
+			out = append(out, Span{s[i+1 : i+1+end], StCode})
 			i += end + 1
 		case c == '*' && i+1 < len(s) && s[i+1] == '*', c == '_' && i+1 < len(s) && s[i+1] == '_':
 			emit()
@@ -463,9 +470,9 @@ func inline(s string, base tcell.Style) []span {
 			emit()
 			text := s[i+1 : i+close]
 			url := s[i+close+2 : i+close+end]
-			out = append(out, span{text, linkStyle(base.Foreground(cAccent), url)})
+			out = append(out, Span{text, linkStyle(base.Foreground(CAccent), url)})
 			if url != text {
-				out = append(out, span{" (" + url + ")", stFaint})
+				out = append(out, Span{" (" + url + ")", StFaint})
 			}
 			i += close + end
 		default:
@@ -473,7 +480,7 @@ func inline(s string, base tcell.Style) []span {
 		}
 	}
 	emit()
-	return linkify(out)
+	return Linkify(out)
 }
 
 // emphasisEdge reports whether a single * or _ at i opens or closes
@@ -492,7 +499,7 @@ func emphasisEdge(s string, i int) bool {
 
 func isWord(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
 
-func table(rows []string, width int, base tcell.Style) []line {
+func table(rows []string, width int, base tcell.Style) []Line {
 	var cells [][]string
 	for _, r := range rows {
 		r = strings.TrimSpace(r)
@@ -531,16 +538,16 @@ func table(rows []string, width int, base tcell.Style) []line {
 	}
 	if total > width {
 		// Too wide to align: fall back to wrapped rows.
-		var out []line
+		var out []Line
 		for _, r := range cells {
 			if isSep(r) {
 				continue
 			}
-			out = append(out, wrap(inline(strings.Join(r, " │ "), base), width, nil, nil)...)
+			out = append(out, Wrap(inline(strings.Join(r, " │ "), base), width, nil, nil)...)
 		}
 		return out
 	}
-	var out []line
+	var out []Line
 	for ri, r := range cells {
 		if isSep(r) {
 			var b strings.Builder
@@ -552,10 +559,10 @@ func table(rows []string, width int, base tcell.Style) []line {
 				}
 			}
 			b.WriteString("┤")
-			out = append(out, line{{b.String(), stFaint}})
+			out = append(out, Line{{b.String(), StFaint}})
 			continue
 		}
-		l := line{{"│", stFaint}}
+		l := Line{{"│", StFaint}}
 		for k := 0; k < cols; k++ {
 			c := ""
 			if k < len(r) {
@@ -565,9 +572,9 @@ func table(rows []string, width int, base tcell.Style) []line {
 			if ri == 0 {
 				st = base.Bold(true)
 			}
-			l = append(l, span{" ", base})
+			l = append(l, Span{" ", base})
 			l = append(l, inline(c, st)...)
-			l = append(l, span{strings.Repeat(" ", widths[k]-uniseg.StringWidth(plain(c))+1), base}, span{"│", stFaint})
+			l = append(l, Span{strings.Repeat(" ", widths[k]-uniseg.StringWidth(plain(c))+1), base}, Span{"│", StFaint})
 		}
 		out = append(out, l)
 	}
@@ -578,7 +585,7 @@ func table(rows []string, width int, base tcell.Style) []line {
 func plain(s string) string {
 	var b strings.Builder
 	for _, sp := range inline(s, tcell.StyleDefault) {
-		b.WriteString(sp.text)
+		b.WriteString(sp.Text)
 	}
 	return b.String()
 }
@@ -591,7 +598,7 @@ var (
 
 // inlineRefs is inline with reference links resolved and inline HTML tags
 // stripped (outside code spans).
-func inlineRefs(s string, base tcell.Style, refs map[string]string) []span {
+func inlineRefs(s string, base tcell.Style, refs map[string]string) []Span {
 	if strings.IndexByte(s, '<') >= 0 || strings.IndexByte(s, '[') >= 0 {
 		s = mapOutsideCode(s, func(t string) string {
 			if strings.IndexByte(t, '<') >= 0 {
@@ -651,3 +658,6 @@ func mapOutsideCode(s string, f func(string) string) string {
 	}
 	return b.String()
 }
+
+// ImageMarker is the token placeholders start with.
+const ImageMarker = "🖼 #"

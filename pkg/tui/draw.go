@@ -2,12 +2,14 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
 	acp "github.com/gfx-labs/go-acp"
+	"github.com/gfx-labs/wist/pkg/render"
 	"github.com/rivo/uniseg"
 )
 
@@ -18,7 +20,7 @@ func (u *UI) draw() {
 	sc.Clear()
 	w, h := sc.Size()
 	if w < 20 || h < 8 {
-		drawStr(sc, 0, 0, w, "terminal too small", stRed)
+		render.DrawStr(sc, 0, 0, w, "terminal too small", render.StRed)
 		sc.Show()
 		return
 	}
@@ -57,8 +59,8 @@ func (u *UI) draw() {
 			if top+i > y {
 				break
 			}
-			fill(sc, 0, top+i, w, tcell.StyleDefault.Background(cPanelBg))
-			drawLine(sc, 1, top+i, w-1, withBg(l, cPanelBg))
+			render.Fill(sc, 0, top+i, w, tcell.StyleDefault.Background(render.CPanelBg))
+			render.DrawLine(sc, 1, top+i, w-1, withBg(l, render.CPanelBg))
 		}
 		y = top - 1
 	}
@@ -85,7 +87,7 @@ func (u *UI) draw() {
 			pl = pl[:min(len(pl), 8)]
 			top := y - len(pl) + 1
 			for i, l := range pl {
-				drawLine(sc, 1, top+i, w-1, l)
+				render.DrawLine(sc, 1, top+i, w-1, l)
 			}
 			y = top - 1
 		}
@@ -104,21 +106,21 @@ func (u *UI) draw() {
 	gfx.endFrame()
 }
 
-func withBg(l line, bg tcell.Color) line {
-	out := make(line, len(l))
+func withBg(l render.Line, bg tcell.Color) render.Line {
+	out := make(render.Line, len(l))
 	for i, s := range l {
-		st := s.st
+		st := s.St
 		if _, b, _ := st.Decompose(); b == tcell.ColorDefault {
 			st = st.Background(bg)
 		}
-		out[i] = span{s.text, st}
+		out[i] = render.Span{Text: s.Text, St: st}
 	}
 	return out
 }
 
 func (u *UI) drawHeader(w int) {
 	sc := u.sc
-	l := line{{" wist ", tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(cAccent).Bold(true)}, {" ", stBase}}
+	l := render.Line{{Text: " wist ", St: tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(render.CAccent).Bold(true)}, {Text: " ", St: render.StBase}}
 	title := u.title
 	if title == "" {
 		title = "new session"
@@ -126,12 +128,12 @@ func (u *UI) drawHeader(w int) {
 			title = "connecting…"
 		}
 	}
-	l = append(l, span{title, stBase.Bold(true)})
+	l = append(l, render.Span{Text: title, St: render.StBase.Bold(true)})
 	agent := u.opts.Agent
 	if agent == "" {
 		agent = "towa"
 	}
-	l = append(l, span{"  " + agent, stDim})
+	l = append(l, render.Span{Text: "  " + agent, St: render.StDim})
 	right := homeRel(u.opts.Cwd)
 	if u.themeName != "" && u.themeName != "dark" {
 		right = u.themeName + "  " + right
@@ -139,10 +141,10 @@ func (u *UI) drawHeader(w int) {
 	if br := gitBranch(u.opts.Cwd); br != "" {
 		right += "  " + br
 	}
-	x := drawLine(sc, 0, 0, w, l)
+	x := render.DrawLine(sc, 0, 0, w, l)
 	rw := uniseg.StringWidth(right)
 	if x+rw+2 < w {
-		drawStr(sc, w-rw-1, 0, w, right, stDim)
+		render.DrawStr(sc, w-rw-1, 0, w, right, render.StDim)
 	}
 }
 
@@ -181,7 +183,7 @@ func (u *UI) drawTranscript(top, bottom, w int) {
 		return
 	}
 	cw := w - 2 // one column margin each side
-	var all []line
+	var all []render.Line
 	rs.codes = rs.codes[:0]
 	for i, b := range u.blocks {
 		ls := b.lines(cw, u.expandAll, u.showThinking)
@@ -189,17 +191,17 @@ func (u *UI) drawTranscript(top, bottom, w int) {
 			continue
 		}
 		if i > 0 && spaced(u.blocks[i-1], b) {
-			all = append(all, line{})
+			all = append(all, render.Line{})
 		}
 		for _, c := range b.codes {
 			if b.kind == kindAgent {
-				rs.codes = append(rs.codes, codeEntry{line: len(all) + c.line, ref: c})
+				rs.codes = append(rs.codes, codeEntry{line: len(all) + c.Line, ref: c})
 			}
 		}
 		all = append(all, ls...)
 	}
 	if u.busy {
-		all = append(all, line{}, u.workingLine())
+		all = append(all, render.Line{}, u.workingLine())
 	}
 	if len(u.blocks) == 0 && !u.busy {
 		all = append(all, welcome(cw)...)
@@ -216,13 +218,13 @@ func (u *UI) drawTranscript(top, bottom, w int) {
 	rs.view = viewGeom{top: y, bottom: bottom, x: 1, w: w - 1, start: start, end: end, height: height, total: len(all)}
 	rs.lines = all
 	for _, l := range all[start:end] {
-		drawLine(u.sc, 1, y, w-1, l)
+		render.DrawLine(u.sc, 1, y, w-1, l)
 		y++
 	}
 	u.decorateTranscript()
 	if u.scroll > 0 {
 		msg := fmt.Sprintf(" ↓ %d more lines (esc / pgdn) ", u.scroll)
-		drawStr(u.sc, max(0, w-uniseg.StringWidth(msg)-1), bottom, w, msg, tcell.StyleDefault.Foreground(cText).Background(cSelBg))
+		render.DrawStr(u.sc, max(0, w-uniseg.StringWidth(msg)-1), bottom, w, msg, tcell.StyleDefault.Foreground(render.CText).Background(render.CSelBg))
 	}
 }
 
@@ -235,7 +237,7 @@ func spaced(a, b *block) bool {
 	return true
 }
 
-func (u *UI) workingLine() line {
+func (u *UI) workingLine() render.Line {
 	el := time.Since(u.turnStart)
 	verb := "working"
 	running := 0
@@ -257,25 +259,25 @@ func (u *UI) workingLine() line {
 	if u.urgent {
 		verb = "interrupting"
 	}
-	l := line{{spinner() + " ", stAccent}, {verb + "…", stAccent.Italic(true)}, {" " + fmtDuration(el), stDim}, {"  esc to interrupt", stFaint}}
+	l := render.Line{{Text: spinner() + " ", St: render.StAccent}, {Text: verb + "…", St: render.StAccent.Italic(true)}, {Text: " " + fmtDuration(el), St: render.StDim}, {Text: "  esc to interrupt", St: render.StFaint}}
 	if n := len(u.queue); n > 0 {
-		l = append(l, span{fmt.Sprintf("  %d queued", n), stYellow})
+		l = append(l, render.Span{Text: fmt.Sprintf("  %d queued", n), St: render.StYellow})
 	}
 	return l
 }
 
-func welcome(w int) []line {
+func welcome(w int) []render.Line {
 	logo := []string{
 		"  ┬ ┬┬┌─┐┌┬┐",
 		"  │││││└─┐ │ ",
 		"  └┴┘┴└─┘ ┴ ",
 	}
-	var out []line
+	var out []render.Line
 	for _, s := range logo {
-		out = append(out, line{{s, stAccent.Bold(true)}})
+		out = append(out, render.Line{{Text: s, St: render.StAccent.Bold(true)}})
 	}
-	out = append(out, line{},
-		line{{"  ask anything. ", stBase}, {"/help", stCode}, {" for keys and commands, ", stDim}, {"@file", stCode}, {" to attach.", stDim}},
+	out = append(out, render.Line{},
+		render.Line{{Text: "  ask anything. ", St: render.StBase}, {Text: "/help", St: render.StCode}, {Text: " for keys and commands, ", St: render.StDim}, {Text: "@file", St: render.StCode}, {Text: " to attach.", St: render.StDim}},
 	)
 	_ = w
 	return out
@@ -283,15 +285,15 @@ func welcome(w int) []line {
 
 func (u *UI) drawInput(top, w int, rows []string) {
 	sc := u.sc
-	border := stFaint
+	border := render.StFaint
 	label := ""
 	switch {
 	case len(u.perms) > 0:
-		border, label = stYellow, " permission needed "
+		border, label = render.StYellow, " permission needed "
 	case u.urgent:
-		border, label = stYellow, " interrupting… "
+		border, label = render.StYellow, " interrupting… "
 	case u.busy:
-		border, label = stAccent, " enter queues · esc interrupts "
+		border, label = render.StAccent, " enter queues · esc interrupts "
 	}
 	if att := u.attachmentLabels(); att != "" {
 		label += att
@@ -302,15 +304,15 @@ func (u *UI) drawInput(top, w int, rows []string) {
 	}
 	sc.SetContent(w-1, top, '╮', nil, border)
 	if label != "" {
-		drawStr(sc, 2, top, w-2, label, border)
+		render.DrawStr(sc, 2, top, w-2, label, border)
 	}
 	if mode := currentName(u.modeOption()); mode != "" {
 		tag := " " + strings.ToLower(mode) + " "
-		st := stDim
+		st := render.StDim
 		if strings.EqualFold(mode, "auto") {
-			st = stYellow
+			st = render.StYellow
 		}
-		drawStr(sc, w-uniseg.StringWidth(tag)-2, top, w-1, tag, st)
+		render.DrawStr(sc, w-uniseg.StringWidth(tag)-2, top, w-1, tag, st)
 	}
 	for i, r := range rows {
 		y := top + 1 + i
@@ -318,59 +320,59 @@ func (u *UI) drawInput(top, w int, rows []string) {
 		if i == 0 {
 			prompt = "❯ "
 		}
-		drawStr(sc, 0, y, w, prompt, stUser.Bold(true))
-		drawStr(sc, 2, y, w-1, r, stBase)
+		render.DrawStr(sc, 0, y, w, prompt, render.StUser.Bold(true))
+		render.DrawStr(sc, 2, y, w-1, r, render.StBase)
 	}
 	if len(u.ed.Buf) == 0 {
 		hint := "message towa…"
 		if u.busy {
 			hint = "type to queue a follow-up…"
 		}
-		drawStr(sc, 2, top+1, w-1, hint, stFaint.Italic(true))
+		render.DrawStr(sc, 2, top+1, w-1, hint, render.StFaint.Italic(true))
 	}
 }
 
 func (u *UI) drawStatus(y, w int) {
 	sc := u.sc
-	var l line
+	var l render.Line
 	if m := currentName(u.modelOption()); m != "" {
-		l = append(l, span{"◆ " + m, stAccent})
+		l = append(l, render.Span{Text: "◆ " + m, St: render.StAccent})
 	}
 	if u.ctxSize > 0 {
 		pct := float64(u.ctxUsed) / float64(u.ctxSize)
-		st := stGreen
+		st := render.StGreen
 		switch {
 		case pct > 0.85:
-			st = stRed
+			st = render.StRed
 		case pct > 0.6:
-			st = stYellow
+			st = render.StYellow
 		}
-		l = append(l, span{"  ", stDim}, span{meter(pct, 8), st}, span{fmt.Sprintf(" %s/%s", fmtTokens(u.ctxUsed), fmtTokens(u.ctxSize)), stDim})
+		l = append(l, render.Span{Text: "  ", St: render.StDim}, render.Span{Text: meter(pct, 8), St: st}, render.Span{Text: fmt.Sprintf(" %s/%s", fmtTokens(u.ctxUsed), fmtTokens(u.ctxSize)), St: render.StDim})
 	}
 	if u.cost != nil && u.cost.Amount > 0 {
-		l = append(l, span{fmt.Sprintf("  $%.2f", u.cost.Amount), stDim})
+		l = append(l, render.Span{Text: fmt.Sprintf("  $%.2f", u.cost.Amount), St: render.StDim})
 	}
 	if u.statsSummary != "" {
-		l = append(l, span{"  " + u.statsSummary, stCyan})
+		l = append(l, render.Span{Text: "  " + u.statsSummary, St: render.StCyan})
 	}
 	if u.turnUsage != nil {
-		l = append(l, span{fmt.Sprintf("  last ↑%s ↓%s", fmtTokens(u.turnUsage.InputTokens), fmtTokens(u.turnUsage.OutputTokens)), stFaint})
+		l = append(l, render.Span{Text: fmt.Sprintf("  last ↑%s ↓%s", fmtTokens(u.turnUsage.InputTokens), fmtTokens(u.turnUsage.OutputTokens)), St: render.StFaint})
 	}
-	drawLine(sc, 1, y, w, l)
+	render.DrawLine(sc, 1, y, w, l)
 
 	var right string
 	var rst tcell.Style
 	switch {
 	case u.flash != "":
-		right, rst = u.flash, stYellow
+		right, rst = u.flash, render.StYellow
 	case u.expandAll:
-		right, rst = "expanded · alt+e", stDim
+		right, rst = "expanded · alt+e", render.StDim
 	default:
-		right, rst = "/help", stFaint
+		right, rst = "/help", render.StFaint
 	}
 	rw := uniseg.StringWidth(right)
-	if l.width()+rw+4 < w {
-		drawStr(sc, w-rw-1, y, w, right, rst)
+	if l.Width()+rw+4 < w {
+		render.DrawStr(sc, w-rw-1, y, w, right, rst)
 	}
 }
 
@@ -380,26 +382,26 @@ func meter(p float64, n int) string {
 	return strings.Repeat("▰", full) + strings.Repeat("▱", n-full)
 }
 
-func (u *UI) planLines(w int) []line {
+func (u *UI) planLines(w int) []render.Line {
 	done := 0
 	for _, e := range u.plan {
 		if e.Status == acp.PlanEntryStatusCompleted {
 			done++
 		}
 	}
-	out := []line{{{"plan ", stAccent.Bold(true)}, {fmt.Sprintf("%d/%d", done, len(u.plan)), stDim}}}
+	out := []render.Line{{{Text: "plan ", St: render.StAccent.Bold(true)}, {Text: fmt.Sprintf("%d/%d", done, len(u.plan)), St: render.StDim}}}
 	for _, e := range u.plan {
-		var mark span
-		st := stBase
+		var mark render.Span
+		st := render.StBase
 		switch e.Status {
 		case acp.PlanEntryStatusCompleted:
-			mark, st = span{"✓ ", stGreen}, stDim.StrikeThrough(true)
+			mark, st = render.Span{Text: "✓ ", St: render.StGreen}, render.StDim.StrikeThrough(true)
 		case acp.PlanEntryStatusInProgress:
-			mark, st = span{"▸ ", stYellow}, stBase.Bold(true)
+			mark, st = render.Span{Text: "▸ ", St: render.StYellow}, render.StBase.Bold(true)
 		default:
-			mark = span{"○ ", stDim}
+			mark = render.Span{Text: "○ ", St: render.StDim}
 		}
-		out = append(out, wrap([]span{{clean(e.Content), st}}, w, line{mark}, line{{"  ", st}})...)
+		out = append(out, render.Wrap([]render.Span{{Text: render.Clean(e.Content), St: st}}, w, render.Line{mark}, render.Line{{Text: "  ", St: st}})...)
 	}
 	return out
 }
@@ -407,44 +409,44 @@ func (u *UI) planLines(w int) []line {
 func (u *UI) drawPlanSide(x, top, w, bottom int) {
 	sc := u.sc
 	for y := top; y <= bottom; y++ {
-		sc.SetContent(x-1, y, '│', nil, stFaint)
+		sc.SetContent(x-1, y, '│', nil, render.StFaint)
 	}
 	for i, l := range u.planLines(w - 2) {
 		if top+i > bottom {
 			break
 		}
-		drawLine(sc, x+1, top+i, x+w, l)
+		render.DrawLine(sc, x+1, top+i, x+w, l)
 	}
 }
 
-func (u *UI) permLines(w int) []line {
+func (u *UI) permLines(w int) []render.Line {
 	p := u.perms[0]
 	tc := p.req.ToolCall
 	title := "tool call"
 	if tc.Title != nil {
 		title = *tc.Title
 	}
-	out := []line{{{"⚠ allow ", stYellow.Bold(true)}, {truncate(clean(title), w-10), stBase.Bold(true)}, {"?", stYellow.Bold(true)}}}
+	out := []render.Line{{{Text: "⚠ allow ", St: render.StYellow.Bold(true)}, {Text: render.Truncate(render.Clean(title), w-10), St: render.StBase.Bold(true)}, {Text: "?", St: render.StYellow.Bold(true)}}}
 	// Show what the tool will do: its diff or input.
 	b := &block{kind: kindTool, content: tc.Content}
 	body := b.bodyLines(w - 4)
 	if len(body) == 0 && tc.RawInput != nil {
-		for _, r := range strings.Split(clean(formatRaw(tc.RawInput)), "\n") {
-			body = append(body, wrap([]span{{r, stDim}}, w-4, nil, nil)...)
+		for _, r := range strings.Split(render.Clean(formatRaw(tc.RawInput)), "\n") {
+			body = append(body, render.Wrap([]render.Span{{Text: r, St: render.StDim}}, w-4, nil, nil)...)
 		}
 	}
 	for i, l := range body {
 		if i == 10 {
-			out = append(out, line{{"  … ", stFaint}})
+			out = append(out, render.Line{{Text: "  … ", St: render.StFaint}})
 			break
 		}
-		out = append(out, append(line{{"  ", stDim}}, l...))
+		out = append(out, append(render.Line{{Text: "  ", St: render.StDim}}, l...))
 	}
-	var opts line
+	var opts render.Line
 	for i, o := range p.req.Options {
-		st := stDim
+		st := render.StDim
 		if i == p.sel {
-			st = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(cAccent).Bold(true)
+			st = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(render.CAccent).Bold(true)
 		}
 		key := fmt.Sprintf("%d", i+1)
 		switch o.Kind {
@@ -455,11 +457,11 @@ func (u *UI) permLines(w int) []line {
 		case acp.PermissionOptionKindRejectOnce:
 			key = "n"
 		}
-		opts = append(opts, span{" " + o.Name + " [" + key + "] ", st}, span{" ", stDim})
+		opts = append(opts, render.Span{Text: " " + o.Name + " [" + key + "] ", St: st}, render.Span{Text: " ", St: render.StDim})
 	}
 	out = append(out, opts)
 	if n := len(u.perms) - 1; n > 0 {
-		out = append(out, line{{fmt.Sprintf("  +%d more waiting", n), stFaint}})
+		out = append(out, render.Line{{Text: fmt.Sprintf("  +%d more waiting", n), St: render.StFaint}})
 	}
 	return out
 }
@@ -477,18 +479,18 @@ func (u *UI) drawCompletion(inputTop, w int) {
 		lw = max(lw, uniseg.StringWidth(it.label))
 	}
 	lw = min(lw, w/2)
-	bg := tcell.StyleDefault.Background(cPanelBg)
+	bg := tcell.StyleDefault.Background(render.CPanelBg)
 	for i := 0; i < n; i++ {
 		it := c.items[first+i]
 		y := top + i
-		st := bg.Foreground(cText)
+		st := bg.Foreground(render.CText)
 		if first+i == c.sel {
-			st = tcell.StyleDefault.Background(cSelBg).Foreground(cText).Bold(true)
+			st = tcell.StyleDefault.Background(render.CSelBg).Foreground(render.CText).Bold(true)
 		}
-		fill(u.sc, 1, y, w-1, st)
-		x := drawStr(u.sc, 2, y, w-1, truncate(it.label, lw), st.Foreground(cAccent))
+		render.Fill(u.sc, 1, y, w-1, st)
+		x := render.DrawStr(u.sc, 2, y, w-1, render.Truncate(it.label, lw), st.Foreground(render.CAccent))
 		x = max(x, 2+lw) + 2
-		drawStr(u.sc, x, y, w-2, truncate(it.detail, w-x-2), st.Foreground(cDim).Bold(false))
+		render.DrawStr(u.sc, x, y, w-2, render.Truncate(it.detail, w-x-2), st.Foreground(render.CDim).Bold(false))
 	}
 }
 
@@ -499,10 +501,10 @@ func (u *UI) drawPicker(w, h int) {
 	ph := min(h-4, 20)
 	x0 := (w - pw) / 2
 	y0 := (h - ph) / 2
-	bg := tcell.StyleDefault.Background(cPanelBg).Foreground(cText)
-	border := bg.Foreground(cAccent)
+	bg := tcell.StyleDefault.Background(render.CPanelBg).Foreground(render.CText)
+	border := bg.Foreground(render.CAccent)
 	for y := y0; y < y0+ph; y++ {
-		fill(sc, x0, y, x0+pw, bg)
+		render.Fill(sc, x0, y, x0+pw, bg)
 		sc.SetContent(x0, y, '│', nil, border)
 		sc.SetContent(x0+pw-1, y, '│', nil, border)
 	}
@@ -514,13 +516,13 @@ func (u *UI) drawPicker(w, h int) {
 	sc.SetContent(x0+pw-1, y0, '╮', nil, border)
 	sc.SetContent(x0, y0+ph-1, '╰', nil, border)
 	sc.SetContent(x0+pw-1, y0+ph-1, '╯', nil, border)
-	drawStr(sc, x0+2, y0, x0+pw-2, " "+p.title+" ", border.Bold(true))
-	drawStr(sc, x0+pw-24, y0+ph-1, x0+pw-2, " ↑↓ enter esc ", border)
+	render.DrawStr(sc, x0+2, y0, x0+pw-2, " "+p.title+" ", border.Bold(true))
+	render.DrawStr(sc, x0+pw-24, y0+ph-1, x0+pw-2, " ↑↓ enter esc ", border)
 
-	fx := drawStr(sc, x0+2, y0+1, x0+pw-2, "⌕ ", bg.Foreground(cDim))
-	fx = drawStr(sc, fx, y0+1, x0+pw-2, string(p.filter), bg.Bold(true))
-	sc.SetContent(fx, y0+1, '▏', nil, bg.Foreground(cAccent))
-	drawStr(sc, x0+pw-12, y0+1, x0+pw-2, fmt.Sprintf("%d/%d", len(p.shown), len(p.items)), bg.Foreground(cFaint))
+	fx := render.DrawStr(sc, x0+2, y0+1, x0+pw-2, "⌕ ", bg.Foreground(render.CDim))
+	fx = render.DrawStr(sc, fx, y0+1, x0+pw-2, string(p.filter), bg.Bold(true))
+	sc.SetContent(fx, y0+1, '▏', nil, bg.Foreground(render.CAccent))
+	render.DrawStr(sc, x0+pw-12, y0+1, x0+pw-2, fmt.Sprintf("%d/%d", len(p.shown), len(p.items)), bg.Foreground(render.CFaint))
 
 	listTop := y0 + 2
 	rows := ph - 3
@@ -530,16 +532,21 @@ func (u *UI) drawPicker(w, h int) {
 		y := listTop + i
 		st := bg
 		if first+i == p.sel {
-			st = tcell.StyleDefault.Background(cSelBg).Foreground(cText).Bold(true)
-			fill(sc, x0+1, y, x0+pw-1, st)
+			st = tcell.StyleDefault.Background(render.CSelBg).Foreground(render.CText).Bold(true)
+			render.Fill(sc, x0+1, y, x0+pw-1, st)
 		}
 		mark := "  "
 		if it.current {
 			mark = "● "
 		}
-		x := drawStr(sc, x0+2, y, x0+pw-2, mark, st.Foreground(cGreen))
+		x := render.DrawStr(sc, x0+2, y, x0+pw-2, mark, st.Foreground(render.CGreen))
 		lw := min(uniseg.StringWidth(it.label), pw/2)
-		x = drawStr(sc, x, y, x0+pw-2, truncate(it.label, lw), st)
-		drawStr(sc, x+2, y, x0+pw-2, truncate(it.detail, x0+pw-x-5), st.Foreground(cDim).Bold(false))
+		x = render.DrawStr(sc, x, y, x0+pw-2, render.Truncate(it.label, lw), st)
+		render.DrawStr(sc, x+2, y, x0+pw-2, render.Truncate(it.detail, x0+pw-x-5), st.Foreground(render.CDim).Bold(false))
 	}
+}
+
+func readFile(p string) (string, error) {
+	b, err := os.ReadFile(p)
+	return string(b), err
 }

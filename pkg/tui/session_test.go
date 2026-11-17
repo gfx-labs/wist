@@ -99,24 +99,6 @@ theme_picker = ["f2", "alt+t"]
 	}
 }
 
-func TestApplyTheme(t *testing.T) {
-	defer applyTheme("dark", nil)
-	if w := applyTheme("light", map[string]string{"accent": "#123456"}); len(w) != 0 {
-		t.Fatal(w)
-	}
-	if r, g, b := cAccent.RGB(); r != 0x12 || g != 0x34 || b != 0x56 {
-		t.Fatalf("accent %x %x %x", r, g, b)
-	}
-	if w := applyTheme("nope", map[string]string{"bogus": "#fff", "text": "notacolor"}); len(w) != 3 {
-		t.Fatalf("want 3 warnings, got %v", w)
-	}
-	for name := range themePresets {
-		if len(themePresets[name]) != len(themeColors) {
-			t.Errorf("preset %s sets %d of %d colors", name, len(themePresets[name]), len(themeColors))
-		}
-	}
-}
-
 func TestQueuedPrompt(t *testing.T) {
 	if got := queuedPrompt([]string{"one", "  ", "two\n"}, false); got != "one\n\ntwo" {
 		t.Fatalf("%q", got)

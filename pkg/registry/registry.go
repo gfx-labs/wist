@@ -26,47 +26,47 @@ const registryURL = "https://cdn.agentclientprotocol.com/registry/v1/latest/regi
 
 // Registry is the parsed ACP registry document.
 type Registry struct {
-	Agents []Agent `json:"agents"`
+	Agents []Agent `json:"agents"` // sorted by ID
 }
 
 // Agent is one registry entry.
 type Agent struct {
-	ID           string       `json:"id"`
-	Name         string       `json:"name"`
-	Version      string       `json:"version"`
-	Description  string       `json:"description"`
-	Distribution Distribution `json:"distribution"`
+	ID           string       `json:"id"`           // stable id used with --agent
+	Name         string       `json:"name"`         // display name
+	Version      string       `json:"version"`      // release version
+	Description  string       `json:"description"`  // one line summary
+	Distribution Distribution `json:"distribution"` // how to run it
 }
 
 // Distribution lists the ways an agent can be run.
 type Distribution struct {
-	Binary map[string]Binary `json:"binary,omitempty"`
-	Npx    *Package          `json:"npx,omitempty"`
-	Uvx    *Package          `json:"uvx,omitempty"`
+	Binary map[string]Binary `json:"binary,omitempty"` // by platform, e.g. linux-x86_64
+	Npx    *Package          `json:"npx,omitempty"`    // run with npx
+	Uvx    *Package          `json:"uvx,omitempty"`    // run with uvx
 }
 
 // Binary is a downloadable archive for one platform.
 type Binary struct {
-	Archive string            `json:"archive"`
-	Sha256  string            `json:"sha256"`
-	Cmd     string            `json:"cmd"`
-	Args    []string          `json:"args"`
-	Env     map[string]string `json:"env"`
+	Archive string            `json:"archive"` // download URL
+	Sha256  string            `json:"sha256"`  // hex digest of the archive
+	Cmd     string            `json:"cmd"`     // executable inside the archive
+	Args    []string          `json:"args"`    // arguments for Cmd
+	Env     map[string]string `json:"env"`     // extra environment
 }
 
 // Package is an npx or uvx package distribution.
 type Package struct {
-	Package string            `json:"package"`
-	Args    []string          `json:"args"`
-	Env     map[string]string `json:"env"`
+	Package string            `json:"package"` // package spec
+	Args    []string          `json:"args"`    // arguments after the package
+	Env     map[string]string `json:"env"`     // extra environment
 }
 
 // Command is how to start an agent.
 type Command struct {
-	Path string
-	Args []string
-	Env  []string
-	Dir  string // set for downloaded binaries
+	Path string   // executable
+	Args []string // its arguments
+	Env  []string // extra KEY=value environment
+	Dir  string   // set for downloaded binaries
 	// fetch, when set, must run before the command exists on disk.
 	fetch *Binary
 }

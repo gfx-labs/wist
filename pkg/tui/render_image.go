@@ -6,13 +6,15 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/gfx-labs/wist/pkg/render"
 )
 
 // imagePlaceholder registers an image content block in the image store and
 // describes it as a one line card: "🖼 #N mime WxH · click or alt+i".
 func imagePlaceholder(mime, data string) string {
 	w, h := imageSize(data)
-	s := "\n" + imageMarker
+	s := "\n" + render.ImageMarker
 	if n := imgs.addB64("", mime, data); n > 0 {
 		s += strconv.Itoa(n)
 	} else {
@@ -54,15 +56,15 @@ func imageSize(data string) (int, int) {
 }
 
 // dimLine fades a rendered line for reasoning text, keeping code colors.
-func dimLine(l line) line {
-	out := make(line, len(l))
+func dimLine(l render.Line) render.Line {
+	out := make(render.Line, len(l))
 	for i, s := range l {
-		fg, _, _ := s.st.Decompose()
-		st := s.st
-		if fg == cText {
-			st = st.Foreground(cDim)
+		fg, _, _ := s.St.Decompose()
+		st := s.St
+		if fg == render.CText {
+			st = st.Foreground(render.CDim)
 		}
-		out[i] = span{s.text, st}
+		out[i] = render.Span{Text: s.Text, St: st}
 	}
 	return out
 }

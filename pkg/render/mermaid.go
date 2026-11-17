@@ -1,4 +1,4 @@
-package tui
+package render
 
 import (
 	"sort"
@@ -114,15 +114,15 @@ var junction = map[uint8]rune{
 	bU | bD | bL | bR: '┼',
 }
 
-func (c *canvas) lines() []line {
-	var out []line
+func (c *canvas) lines() []Line {
+	var out []Line
 	for y := range c.h {
-		var l line
+		var l Line
 		var b strings.Builder
 		cur := uint8(255)
 		flush := func() {
 			if b.Len() > 0 {
-				l = append(l, span{b.String(), mmStyles[cur]})
+				l = append(l, Span{b.String(), mmStyles[cur]})
 				b.Reset()
 			}
 		}
@@ -156,10 +156,10 @@ func (c *canvas) lines() []line {
 	return out
 }
 
-// mermaid renders src, or returns nil when the diagram type is unknown or
+// Mermaid renders src, or returns nil when the diagram type is unknown or
 // the source does not parse into anything.
-func mermaid(src string) []line {
-	lines := strings.Split(clean(src), "\n")
+func Mermaid(src string) []Line {
+	lines := strings.Split(Clean(src), "\n")
 	first := ""
 	for len(lines) > 0 {
 		first = strings.TrimSpace(lines[0])
@@ -367,7 +367,7 @@ func (g *graphParse) parseGroup(s string) ([]int, string, bool) {
 
 const mmMaxLabel = 28
 
-func flowchart(lines []string, dir string) []line {
+func flowchart(lines []string, dir string) []Line {
 	g := parseFlow(lines)
 	n := len(g.nodes)
 	if n == 0 || n > 200 {
@@ -416,7 +416,7 @@ func flowchart(lines []string, dir string) []line {
 	nl := 0
 	for _, nd := range g.nodes {
 		nl = max(nl, nd.layer+1)
-		nd.label = truncate(nd.label, mmMaxLabel)
+		nd.label = Truncate(nd.label, mmMaxLabel)
 		nd.w = uniseg.StringWidth(nd.label) + 4
 	}
 	layers := make([][]*fnode, nl)
@@ -450,7 +450,7 @@ func flowchart(lines []string, dir string) []line {
 	maxLabel := 0
 	hasBack := false
 	for k, e := range g.edges {
-		maxLabel = max(maxLabel, uniseg.StringWidth(truncate(e.label, 16)))
+		maxLabel = max(maxLabel, uniseg.StringWidth(Truncate(e.label, 16)))
 		hasBack = hasBack || back[k]
 	}
 	// Main axis: positions of layers. Cross axis: positions within a layer.
@@ -592,7 +592,7 @@ func flowchart(lines []string, dir string) []line {
 			cv.put(x, y, arrowRune, mmArrow)
 		}
 		if e.label != "" {
-			lab := truncate(e.label, 16)
+			lab := Truncate(e.label, 16)
 			if lr {
 				x, y := P(m0+1, sc)
 				cv.text(x, y-1, lab, mmLabel)
@@ -608,7 +608,7 @@ func flowchart(lines []string, dir string) []line {
 	out := cv.lines()
 	if dir == "BT" || dir == "RL" {
 		// Close enough: keep top-down / left-right; note the direction.
-		out = append(out, line{{"(" + dir + " drawn as " + map[string]string{"BT": "TD", "RL": "LR"}[dir] + ")", stFaint}})
+		out = append(out, Line{{"(" + dir + " drawn as " + map[string]string{"BT": "TD", "RL": "LR"}[dir] + ")", StFaint}})
 	}
 	return out
 }
@@ -644,7 +644,7 @@ type seqStep struct {
 	dashed   bool
 }
 
-func sequence(lines []string) []line {
+func sequence(lines []string) []Line {
 	var names, labels []string
 	idx := map[string]int{}
 	part := func(id, label string) int {
@@ -709,12 +709,12 @@ func sequence(lines []string) []line {
 	}
 	maxW := 0
 	for i := range labels {
-		labels[i] = truncate(labels[i], 20)
+		labels[i] = Truncate(labels[i], 20)
 		maxW = max(maxW, uniseg.StringWidth(labels[i])+4)
 	}
 	maxMsg := 0
 	for i := range steps {
-		steps[i].text = truncate(steps[i].text, 36)
+		steps[i].text = Truncate(steps[i].text, 36)
 		if steps[i].kind == 'm' {
 			maxMsg = max(maxMsg, uniseg.StringWidth(steps[i].text)+4)
 		}

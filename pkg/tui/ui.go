@@ -12,6 +12,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/wist/pkg/editor"
+	"github.com/gfx-labs/wist/pkg/render"
 )
 
 // UI owns all state. Only the loop goroutine touches it; other goroutines
@@ -119,7 +120,7 @@ func newUI(o Options, cfg Config) (*UI, error) {
 	if u.themeName == "" {
 		u.themeName = "dark"
 	}
-	warnings := append(append([]string{}, cfg.Warnings...), applyTheme(cfg.Theme, cfg.Colors)...)
+	warnings := append(append([]string{}, cfg.Warnings...), render.ApplyTheme(cfg.Theme, cfg.Colors)...)
 	warnings = append(warnings, u.keymap.warnings...)
 	for _, w := range warnings {
 		u.addBlock(&block{kind: kindNotice, text: w})

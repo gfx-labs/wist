@@ -1,4 +1,4 @@
-package tui
+package render
 
 import (
 	"strings"
@@ -18,17 +18,17 @@ func init() { refreshStyles() }
 // calls it after changing the palette.
 func refreshStyles() {
 	fitPalette()
-	stKeyword = tcell.StyleDefault.Foreground(cAccent)
-	stType = tcell.StyleDefault.Foreground(cCyan)
-	stFunc = tcell.StyleDefault.Foreground(cUser)
-	stString = tcell.StyleDefault.Foreground(cGreen)
-	stNumber = tcell.StyleDefault.Foreground(cYellow)
+	stKeyword = tcell.StyleDefault.Foreground(CAccent)
+	stType = tcell.StyleDefault.Foreground(CCyan)
+	stFunc = tcell.StyleDefault.Foreground(CUser)
+	stString = tcell.StyleDefault.Foreground(CGreen)
+	stNumber = tcell.StyleDefault.Foreground(CYellow)
 	stOrangeNum = stNumber
-	stComment = tcell.StyleDefault.Foreground(cFaint).Italic(true)
-	stConst = tcell.StyleDefault.Foreground(cOrange)
-	stMeta = tcell.StyleDefault.Foreground(cUser)
-	stKey = tcell.StyleDefault.Foreground(cAccent)
-	mmStyles = [...]tcell.Style{0: stBase, mmEdge: stDim, mmBox: stAccent, mmText: stBase, mmLabel: stYellow, mmArrow: stAccent}
+	stComment = tcell.StyleDefault.Foreground(CFaint).Italic(true)
+	stConst = tcell.StyleDefault.Foreground(COrange)
+	stMeta = tcell.StyleDefault.Foreground(CUser)
+	stKey = tcell.StyleDefault.Foreground(CAccent)
+	mmStyles = [...]tcell.Style{0: StBase, mmEdge: StDim, mmBox: StAccent, mmText: StBase, mmLabel: StYellow, mmArrow: StAccent}
 }
 
 type langSpec struct {
@@ -122,7 +122,7 @@ var generic = &langSpec{family: "generic", quotes: "\"'`", lineComment: []string
 }
 
 // highlight colors one line of code without cross-line state.
-func highlight(src, lang string) []span {
+func highlight(src, lang string) []Span {
 	sp, _ := highlightLine(src, lang, 0)
 	return sp
 }
@@ -141,42 +141,42 @@ func specFor(lang string) *langSpec {
 // highlightLine colors src. state 1 means a block comment (or multi-line
 // string) is open at the start of the line; the returned state says
 // whether it is still open at the end.
-func highlightLine(src, lang string, state int) ([]span, int) {
-	src = clean(src)
+func highlightLine(src, lang string, state int) ([]Span, int) {
+	src = Clean(src)
 	switch strings.ToLower(lang) {
 	case "diff", "patch":
 		switch {
 		case strings.HasPrefix(src, "+++"), strings.HasPrefix(src, "---"):
-			return []span{{src, stBase.Bold(true)}}, 0
+			return []Span{{src, StBase.Bold(true)}}, 0
 		case strings.HasPrefix(src, "+"):
-			return []span{{src, stGreen}}, 0
+			return []Span{{src, StGreen}}, 0
 		case strings.HasPrefix(src, "-"):
-			return []span{{src, stRed}}, 0
+			return []Span{{src, StRed}}, 0
 		case strings.HasPrefix(src, "@@"):
-			return []span{{src, stCyan}}, 0
+			return []Span{{src, StCyan}}, 0
 		}
-		return []span{{src, stDim}}, 0
+		return []Span{{src, StDim}}, 0
 	}
 	s := specFor(lang)
 	if s.family == "html" {
 		return highlightHTML(src, state)
 	}
-	var out []span
+	var out []Span
 	add := func(t string, st tcell.Style) {
 		if t == "" {
 			return
 		}
-		if n := len(out); n > 0 && out[n-1].st == st {
-			out[n-1].text += t
+		if n := len(out); n > 0 && out[n-1].St == st {
+			out[n-1].Text += t
 			return
 		}
-		out = append(out, span{t, st})
+		out = append(out, Span{t, st})
 	}
 	i := 0
 	if state == 1 && s.blockClose != "" {
 		end := strings.Index(src, s.blockClose)
 		if end < 0 {
-			return []span{{src, s.blockStyle}}, 1
+			return []Span{{src, s.blockStyle}}, 1
 		}
 		add(src[:end+len(s.blockClose)], s.blockStyle)
 		i = end + len(s.blockClose)
@@ -269,7 +269,7 @@ func highlightLine(src, lang string, state int) ([]span, int) {
 			if s.caseFold {
 				key = strings.ToLower(w)
 			}
-			st := stBase
+			st := StBase
 			switch {
 			case (s.family == "yaml" || s.family == "toml") && i == lead && keyFollows(src[j:], s.family):
 				st = stKey
@@ -291,7 +291,7 @@ func highlightLine(src, lang string, state int) ([]span, int) {
 			add(w, st)
 			i = j
 		default:
-			add(string(c), stBase)
+			add(string(c), StBase)
 			i++
 		}
 	}
@@ -325,15 +325,15 @@ func isWordByte(c byte) bool {
 }
 
 // highlightHTML colors tags, attributes, strings and comments.
-func highlightHTML(src string, state int) ([]span, int) {
-	var out []span
+func highlightHTML(src string, state int) ([]Span, int) {
+	var out []Span
 	i := 0
 	if state == 1 {
 		end := strings.Index(src, "-->")
 		if end < 0 {
-			return []span{{src, stComment}}, 1
+			return []Span{{src, stComment}}, 1
 		}
-		out = append(out, span{src[:end+3], stComment})
+		out = append(out, Span{src[:end+3], stComment})
 		i = end + 3
 	}
 	for i < len(src) {
@@ -342,10 +342,10 @@ func highlightHTML(src string, state int) ([]span, int) {
 		case strings.HasPrefix(rest, "<!--"):
 			end := strings.Index(rest, "-->")
 			if end < 0 {
-				out = append(out, span{rest, stComment})
+				out = append(out, Span{rest, stComment})
 				return out, 1
 			}
-			out = append(out, span{rest[:end+3], stComment})
+			out = append(out, Span{rest[:end+3], stComment})
 			i += end + 3
 		case rest[0] == '<':
 			end := strings.IndexByte(rest, '>')
@@ -357,7 +357,7 @@ func highlightHTML(src string, state int) ([]span, int) {
 			for j < len(tag) && (isWordByte(tag[j]) || tag[j] == '/' || tag[j] == '!' || tag[j] == '-' || tag[j] == ':') {
 				j++
 			}
-			out = append(out, span{tag[:j], stKeyword})
+			out = append(out, Span{tag[:j], stKeyword})
 			for j < len(tag) {
 				c := tag[j]
 				switch {
@@ -366,21 +366,21 @@ func highlightHTML(src string, state int) ([]span, int) {
 					if k < 0 {
 						k = len(tag) - j - 2
 					}
-					out = append(out, span{tag[j : j+k+2], stString})
+					out = append(out, Span{tag[j : j+k+2], stString})
 					j += k + 2
 				case isWordByte(c) || c == '-':
 					k := j
 					for k < len(tag) && (isWordByte(tag[k]) || tag[k] == '-' || tag[k] == ':') {
 						k++
 					}
-					out = append(out, span{tag[j:k], stType})
+					out = append(out, Span{tag[j:k], stType})
 					j = k
 				default:
-					st := stDim
+					st := StDim
 					if c == '>' || c == '/' {
 						st = stKeyword
 					}
-					out = append(out, span{string(c), st})
+					out = append(out, Span{string(c), st})
 					j++
 				}
 			}
@@ -390,7 +390,7 @@ func highlightHTML(src string, state int) ([]span, int) {
 			if end < 0 {
 				end = len(rest)
 			}
-			out = append(out, span{rest[:end], stBase})
+			out = append(out, Span{rest[:end], StBase})
 			i += end
 		}
 	}

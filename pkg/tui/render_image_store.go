@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/gfx-labs/wist/pkg/render"
 )
 
 // The image store keeps the last few images seen in the session (agent
@@ -125,14 +127,11 @@ func sizeLabel(n int) string {
 	return fmt.Sprintf("%.0f KB", float64(n)/1024)
 }
 
-// imageMarker is the token placeholders start with.
-const imageMarker = "🖼 #"
-
 // storeAttachment registers a prompt attachment and returns its line for
 // the user block.
 func (u *UI) storeAttachment(a attachment) string {
 	im := imgs.add(a.name, a.mime, a.data)
-	s := fmt.Sprintf("%s%d %s", imageMarker, im.num, a.name)
+	s := fmt.Sprintf("%s%d %s", render.ImageMarker, im.num, a.name)
 	if im.w > 0 {
 		s += fmt.Sprintf(" %dx%d", im.w, im.h)
 	}
@@ -140,13 +139,13 @@ func (u *UI) storeAttachment(a attachment) string {
 }
 
 // imageNumIn finds an image placeholder number in a rendered line.
-func imageNumIn(l line) int {
+func imageNumIn(l render.Line) int {
 	for _, sp := range l {
-		i := strings.Index(sp.text, imageMarker)
+		i := strings.Index(sp.Text, render.ImageMarker)
 		if i < 0 {
 			continue
 		}
-		rest := sp.text[i+len(imageMarker):]
+		rest := sp.Text[i+len(render.ImageMarker):]
 		j := 0
 		for j < len(rest) && rest[j] >= '0' && rest[j] <= '9' {
 			j++

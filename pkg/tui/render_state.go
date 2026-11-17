@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/gfx-labs/wist/pkg/render"
 	"github.com/rivo/uniseg"
 )
 
@@ -15,7 +16,7 @@ type renderState struct {
 
 	// Rebuilt on every drawTranscript.
 	view  viewGeom
-	lines []line // the whole rendered transcript (shared with block caches)
+	lines []render.Line // the whole rendered transcript (shared with block caches)
 	codes []codeEntry
 
 	sel    selection
@@ -34,7 +35,7 @@ type viewGeom struct {
 
 type codeEntry struct {
 	line int // index into rs.lines of the header
-	ref  codeRef
+	ref  render.CodeRef
 	num  int // hotkey number when visible, else 0
 }
 
@@ -62,11 +63,11 @@ func (r *renderState) codeAt(li int) *codeEntry {
 
 // cells splits a rendered line into one string per screen cell. The second
 // cell of a wide grapheme is "".
-func cells(l line) []string {
+func cells(l render.Line) []string {
 	var out []string
 	for _, s := range l {
 		state := -1
-		rest := s.text
+		rest := s.Text
 		for rest != "" {
 			var g string
 			var w int
@@ -85,20 +86,20 @@ func cells(l line) []string {
 
 // gutterCells is how many leading cells of l are decoration (code block,
 // quote, thinking or tool-output gutters) that a copy should leave out.
-func gutterCells(l line) int {
+func gutterCells(l render.Line) int {
 	if len(l) == 0 {
 		return 0
 	}
-	switch strings.TrimRight(l[0].text, " ") {
+	switch strings.TrimRight(l[0].Text, " ") {
 	case "│", "┊", "▎", "  │":
-		return len(cells(line{l[0]}))
+		return len(cells(render.Line{l[0]}))
 	}
 	return 0
 }
 
 // selectedText returns the text between a and b (cell positions, b
 // exclusive on its line), trailing spaces trimmed per line.
-func selectedText(lines []line, a, b pos) string {
+func selectedText(lines []render.Line, a, b pos) string {
 	if b.less(a) {
 		a, b = b, a
 	}
@@ -137,7 +138,7 @@ func numberCodes() []*codeEntry {
 	for i := len(rs.codes) - 1; i >= 0; i-- {
 		c := &rs.codes[i]
 		c.num = 0
-		if !c.ref.closed {
+		if !c.ref.Closed {
 			continue
 		}
 		all = append(all, c)
@@ -170,14 +171,14 @@ func (u *UI) copyCode(n int) {
 }
 
 func (u *UI) copyCodeEntry(c *codeEntry) {
-	text := c.ref.text
+	text := c.ref.Text
 	if len(text) > maxCopyBytes {
 		text = text[:maxCopyBytes]
 	}
 	u.sc.SetClipboard([]byte(text))
 	what := "code"
-	if c.ref.lang != "" {
-		what = c.ref.lang
+	if c.ref.Lang != "" {
+		what = c.ref.Lang
 	}
 	u.notify(fmt.Sprintf("copied %s block (%d lines)", what, strings.Count(text, "\n")+1))
 }
@@ -194,9 +195,9 @@ func (u *UI) decorateTranscript() {
 		}
 		y := v.top + c.line - v.start
 		badge := fmt.Sprintf(" alt+%d ", c.num)
-		x := v.x + rs.lines[c.line].width() - uniseg.StringWidth(copyLabel) - uniseg.StringWidth(badge)
+		x := v.x + rs.lines[c.line].Width() - uniseg.StringWidth(render.CopyLabel) - uniseg.StringWidth(badge)
 		if x > v.x+12 {
-			drawStr(sc, x, y, v.w, badge, stFaint)
+			render.DrawStr(sc, x, y, v.w, badge, render.StFaint)
 		}
 	}
 	if rs.search.open {
@@ -208,10 +209,10 @@ func (u *UI) decorateTranscript() {
 			cur := i == rs.search.cur
 			restyle(sc, v.x+m.col, v.top+m.line-v.start, m.n, func(old tcell.Style) tcell.Style {
 				if cur {
-					return tcell.StyleDefault.Background(cYellow).Foreground(tcell.ColorBlack).Bold(true).Underline(tcell.UnderlineStyleDouble, tcell.ColorBlack)
+					return tcell.StyleDefault.Background(render.CYellow).Foreground(tcell.ColorBlack).Bold(true).Underline(tcell.UnderlineStyleDouble, tcell.ColorBlack)
 				}
 				// Other hits keep their colors, underlined in yellow on the selection tint.
-				return old.Background(cSelBg).Underline(tcell.UnderlineStyleSolid, cYellow)
+				return old.Background(render.CSelBg).Underline(tcell.UnderlineStyleSolid, render.CYellow)
 			})
 		}
 	}
@@ -228,7 +229,7 @@ func (u *UI) decorateTranscript() {
 			if li == b.line {
 				to = b.col + 1
 			}
-			restyle(sc, v.x+from, v.top+li-v.start, to-from, func(st tcell.Style) tcell.Style { return st.Background(cSelBg) })
+			restyle(sc, v.x+from, v.top+li-v.start, to-from, func(st tcell.Style) tcell.Style { return st.Background(render.CSelBg) })
 		}
 	}
 }
@@ -280,7 +281,7 @@ func (u *UI) searchMatches() {
 	for li, l := range rs.lines {
 		var b strings.Builder
 		for _, s := range l {
-			b.WriteString(s.text)
+			b.WriteString(s.Text)
 		}
 		text := strings.ToLower(b.String())
 		off := 0
@@ -389,12 +390,12 @@ func (u *UI) searchKey(ev *tcell.EventKey) bool {
 
 func (u *UI) drawSearchBar(y, w int) {
 	sc := u.sc
-	bg := tcell.StyleDefault.Background(cPanelBg).Foreground(cText)
-	fill(sc, 0, y, w, bg)
-	x := drawStr(sc, 1, y, w, "⌕ ", bg.Foreground(cAccent))
-	x = drawStr(sc, x, y, w-30, string(rs.search.query), bg.Bold(true))
+	bg := tcell.StyleDefault.Background(render.CPanelBg).Foreground(render.CText)
+	render.Fill(sc, 0, y, w, bg)
+	x := render.DrawStr(sc, 1, y, w, "⌕ ", bg.Foreground(render.CAccent))
+	x = render.DrawStr(sc, x, y, w-30, string(rs.search.query), bg.Bold(true))
 	if rs.search.editing {
-		sc.SetContent(x, y, '▏', nil, bg.Foreground(cAccent))
+		sc.SetContent(x, y, '▏', nil, bg.Foreground(render.CAccent))
 	}
 	info := "no matches"
 	if n := len(rs.search.matches); n > 0 {
@@ -411,5 +412,5 @@ func (u *UI) drawSearchBar(y, w int) {
 		info = "type to search"
 	}
 	r := info + hint
-	drawStr(sc, max(x+2, w-uniseg.StringWidth(r)-1), y, w, r, bg.Foreground(cDim))
+	render.DrawStr(sc, max(x+2, w-uniseg.StringWidth(r)-1), y, w, r, bg.Foreground(render.CDim))
 }

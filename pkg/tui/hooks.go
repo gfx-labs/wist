@@ -79,10 +79,10 @@ func (u *UI) renderMouse(ev *tcell.EventMouse) bool {
 				}
 			}
 			if ce := rs.codeAt(li); ce != nil {
-				if ce.ref.closed {
+				if ce.ref.Closed {
 					u.copyCodeEntry(ce)
-					if strings.EqualFold(ce.ref.lang, "mermaid") {
-						rs.panel.pinned = ce.ref.text
+					if strings.EqualFold(ce.ref.Lang, "mermaid") {
+						rs.panel.pinned = ce.ref.Text
 					}
 				}
 				return true

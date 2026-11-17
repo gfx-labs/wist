@@ -83,6 +83,7 @@ func scaleBox(src image.Image, w, h int) *image.RGBA {
 	return dst
 }
 
+// EncodePNG encodes img as PNG.
 func EncodePNG(img image.Image) []byte {
 	var b bytes.Buffer
 	enc := png.Encoder{CompressionLevel: png.BestSpeed}
@@ -244,7 +245,10 @@ func sixelRLE(sb *strings.Builder, row []byte) {
 // --- half blocks -------------------------------------------------------------
 
 // HalfCell is one "▀" cell: top pixel as foreground, bottom as background.
-type HalfCell struct{ Top, Bot color.RGBA }
+type HalfCell struct {
+	Top color.RGBA // upper pixel, drawn as foreground
+	Bot color.RGBA // lower pixel, drawn as background
+}
 
 // HalfBlocks downscales data to at most cols x rows cells of two pixels
 // each, keeping the aspect ratio for cells about twice as tall as wide.

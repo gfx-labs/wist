@@ -10,6 +10,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	acp "github.com/gfx-labs/go-acp"
+	"github.com/gfx-labs/wist/pkg/render"
 )
 
 type blockKind int
@@ -47,66 +48,66 @@ type block struct {
 
 	cacheW     int
 	cacheExp   bool
-	cacheLines []line
-	codes      []codeRef // fenced code blocks of an agent message, by rendered line
+	cacheLines []render.Line
+	codes      []render.CodeRef // fenced code blocks of an agent message, by rendered line
 }
 
 func (b *block) dirty() { b.cacheW = -1 }
 
 // lines renders the block for width. showThinking and expandAll are UI
 // toggles that change how thoughts and tool output are shown.
-func (b *block) lines(width int, expandAll bool, showThinking bool) []line {
+func (b *block) lines(width int, expandAll bool, showThinking bool) []render.Line {
 	exp := b.expanded || expandAll
 	if b.cacheW == width && b.cacheExp == exp && b.kind != kindThought && b.status != acp.ToolCallStatusInProgress {
 		return b.cacheLines
 	}
-	var out []line
+	var out []render.Line
 	switch b.kind {
 	case kindUser:
-		st := stUser
+		st := render.StUser
 		if b.queued {
-			st = stDim
+			st = render.StDim
 		}
-		prefix := line{{"❯ ", st.Bold(true)}}
-		body := tcell.StyleDefault.Foreground(cText).Bold(true)
+		prefix := render.Line{{Text: "❯ ", St: st.Bold(true)}}
+		body := tcell.StyleDefault.Foreground(render.CText).Bold(true)
 		if b.queued {
-			body = stDim.Italic(true)
-			prefix = line{{"⏳ ", stDim}}
+			body = render.StDim.Italic(true)
+			prefix = render.Line{{Text: "⏳ ", St: render.StDim}}
 		}
-		out = wrap([]span{{clean(b.text), body}}, width, prefix, line{{"  ", st}})
+		out = render.Wrap([]render.Span{{Text: render.Clean(b.text), St: body}}, width, prefix, render.Line{{Text: "  ", St: st}})
 		if b.queued {
-			out = append(out, line{{"  will send after this turn", stFaint.Italic(true)}})
+			out = append(out, render.Line{{Text: "  will send after this turn", St: render.StFaint.Italic(true)}})
 		}
 	case kindAgent:
-		out, b.codes = markdownDoc(clean(b.text), width, stBase)
+		out, b.codes = render.MarkdownDoc(render.Clean(b.text), width, render.StBase)
 	case kindThought:
-		text := strings.TrimSpace(clean(b.text))
+		text := strings.TrimSpace(render.Clean(b.text))
 		if !showThinking && !exp {
 			first, _, _ := strings.Cut(text, "\n")
-			out = []line{{{"✻ ", stDim}, {truncate("thinking: "+first, width-2), stDim.Italic(true)}}}
+			out = []render.Line{{{Text: "✻ ", St: render.StDim}, {Text: render.Truncate("thinking: "+first, width-2), St: render.StDim.Italic(true)}}}
 		} else {
-			bar := line{{"┊ ", stFaint}}
-			out = []line{{{"✻ thinking", stDim}}}
-			for _, l := range markdown(text, width-2, stDim.Italic(true)) {
-				out = append(out, append(append(line{}, bar...), dimLine(l)...))
+			bar := render.Line{{Text: "┊ ", St: render.StFaint}}
+			out = []render.Line{{{Text: "✻ thinking", St: render.StDim}}}
+			for _, l := range render.Markdown(text, width-2, render.StDim.Italic(true)) {
+				out = append(out, append(append(render.Line{}, bar...), dimLine(l)...))
 			}
 		}
 	case kindTool:
 		out = b.toolLines(width, exp)
 	case kindNotice:
-		out = wrap([]span{{clean(b.text), stYellow}}, width, line{{"⚑ ", stYellow}}, line{{"  ", stYellow}})
+		out = render.Wrap([]render.Span{{Text: render.Clean(b.text), St: render.StYellow}}, width, render.Line{{Text: "⚑ ", St: render.StYellow}}, render.Line{{Text: "  ", St: render.StYellow}})
 	case kindError:
-		msg := clean(b.text)
+		msg := render.Clean(b.text)
 		key, rest, _ := strings.Cut(msg, ":")
-		sp := []span{{key, errorStyle(stRed)}}
+		sp := []render.Span{{Text: key, St: errorStyle(render.StRed)}}
 		if rest != "" || strings.HasSuffix(msg, ":") {
-			sp = append(sp, span{":" + rest, stRed})
+			sp = append(sp, render.Span{Text: ":" + rest, St: render.StRed})
 		}
-		out = wrap(sp, width, line{{"✗ ", stRed}}, line{{"  ", stRed}})
+		out = render.Wrap(sp, width, render.Line{{Text: "✗ ", St: render.StRed}}, render.Line{{Text: "  ", St: render.StRed}})
 	case kindInfo:
-		out = wrap([]span{{clean(b.text), stDim}}, width, line{{"· ", stDim}}, line{{"  ", stDim}})
+		out = render.Wrap([]render.Span{{Text: render.Clean(b.text), St: render.StDim}}, width, render.Line{{Text: "· ", St: render.StDim}}, render.Line{{Text: "  ", St: render.StDim}})
 	case kindCompaction:
-		out = wrap([]span{{clean(b.text), stCyan}}, width, line{{"⇣ ", stCyan}}, line{{"  ", stCyan}})
+		out = render.Wrap([]render.Span{{Text: render.Clean(b.text), St: render.StCyan}}, width, render.Line{{Text: "⇣ ", St: render.StCyan}}, render.Line{{Text: "  ", St: render.StCyan}})
 	}
 	b.cacheW, b.cacheExp, b.cacheLines = width, exp, out
 	return out
@@ -140,23 +141,23 @@ func spinner() string {
 	return spinnerFrames[int(time.Now().UnixMilli()/80)%len(spinnerFrames)]
 }
 
-func (b *block) toolLines(width int, exp bool) []line {
-	var mark span
+func (b *block) toolLines(width int, exp bool) []render.Line {
+	var mark render.Span
 	switch b.status {
 	case acp.ToolCallStatusCompleted:
-		mark = span{"✓", stGreen}
+		mark = render.Span{Text: "✓", St: render.StGreen}
 	case acp.ToolCallStatusFailed:
-		mark = span{"✗", stRed}
+		mark = render.Span{Text: "✗", St: render.StRed}
 	case acp.ToolCallStatusInProgress:
-		mark = span{spinner(), stYellow}
+		mark = render.Span{Text: spinner(), St: render.StYellow}
 	default:
-		mark = span{"○", stDim}
+		mark = render.Span{Text: "○", St: render.StDim}
 	}
-	title := clean(b.title)
+	title := render.Clean(b.title)
 	if title == "" {
 		title = "tool"
 	}
-	head := line{mark, {" " + toolIcon(b.toolKind) + " ", stAccent}}
+	head := render.Line{mark, {Text: " " + toolIcon(b.toolKind) + " ", St: render.StAccent}}
 	var dur string
 	if !b.started.IsZero() {
 		end := b.finished
@@ -168,25 +169,25 @@ func (b *block) toolLines(width int, exp bool) []line {
 		}
 	}
 	summary := b.summary()
-	room := width - head.width() - len(dur) - 2
-	t := truncate(title, max(room, 8))
-	tst := stBase.Bold(true)
+	room := width - head.Width() - len(dur) - 2
+	t := render.Truncate(title, max(room, 8))
+	tst := render.StBase.Bold(true)
 	if b.status == acp.ToolCallStatusFailed {
 		tst = errorStyle(tst)
 	}
-	head = append(head, span{t, tst})
-	if s := truncate(summary, room-len([]rune(t))-1); s != "" && summary != "" {
-		head = append(head, span{" ", stDim})
-		sst := stDim
+	head = append(head, render.Span{Text: t, St: tst})
+	if s := render.Truncate(summary, room-len([]rune(t))-1); s != "" && summary != "" {
+		head = append(head, render.Span{Text: " ", St: render.StDim})
+		sst := render.StDim
 		if len(b.locations) > 0 {
 			if u := fileURL(b.locations[0].Path); u != "" {
 				sst = sst.Url(u)
 			}
 		}
-		head = append(head, span{s, sst})
+		head = append(head, render.Span{Text: s, St: sst})
 	}
-	head = append(head, span{dur, stFaint})
-	out := []line{head}
+	head = append(head, render.Span{Text: dur, St: render.StFaint})
+	out := []render.Line{head}
 
 	body := b.bodyLines(width - 4)
 	limit := 6
@@ -196,13 +197,13 @@ func (b *block) toolLines(width int, exp bool) []line {
 	if exp {
 		limit = len(body)
 	}
-	gutter := line{{"  │ ", stFaint}}
+	gutter := render.Line{{Text: "  │ ", St: render.StFaint}}
 	for i, l := range body {
 		if i == limit {
-			out = append(out, line{{"  ╰ ", stFaint}, {fmt.Sprintf("… %d more lines (ctrl+o to expand)", len(body)-limit), stFaint.Italic(true)}})
+			out = append(out, render.Line{{Text: "  ╰ ", St: render.StFaint}, {Text: fmt.Sprintf("… %d more lines (ctrl+o to expand)", len(body)-limit), St: render.StFaint.Italic(true)}})
 			break
 		}
-		out = append(out, append(append(line{}, gutter...), l...))
+		out = append(out, append(append(render.Line{}, gutter...), l...))
 	}
 	return out
 }
@@ -224,23 +225,23 @@ func (b *block) summary() string {
 	return ""
 }
 
-func (b *block) bodyLines(width int) []line {
-	var out []line
+func (b *block) bodyLines(width int) []render.Line {
+	var out []render.Line
 	for _, c := range b.content {
 		switch {
 		case c.Diff != nil:
 			out = append(out, diffLines(c.Diff, width)...)
 		case c.Content != nil:
 			text := contentText(c.Content.Content)
-			text = strings.TrimRight(clean(text), "\n")
+			text = strings.TrimRight(render.Clean(text), "\n")
 			if text == "" {
 				continue
 			}
 			for _, raw := range strings.Split(text, "\n") {
-				out = append(out, wrap(linkify([]span{{raw, stDim}}), width, nil, nil)...)
+				out = append(out, render.Wrap(render.Linkify([]render.Span{{Text: raw, St: render.StDim}}), width, nil, nil)...)
 			}
 		case c.Terminal != nil:
-			out = append(out, line{{"[terminal " + string(c.Terminal.TerminalId) + "]", stDim}})
+			out = append(out, render.Line{{Text: "[terminal " + string(c.Terminal.TerminalId) + "]", St: render.StDim}})
 		}
 	}
 	return out
@@ -267,12 +268,12 @@ func contentText(c acp.ContentBlock) string {
 
 // diffLines renders an edit as a unified line diff with colored
 // backgrounds, like jcode's diff cards.
-func diffLines(d *acp.ToolCallContentDiff, width int) []line {
+func diffLines(d *acp.ToolCallContentDiff, width int) []render.Line {
 	old := ""
 	if d.OldText != nil {
-		old = clean(*d.OldText)
+		old = render.Clean(*d.OldText)
 	}
-	ops := lineDiff(splitLines(old), splitLines(clean(d.NewText)))
+	ops := lineDiff(splitLines(old), splitLines(render.Clean(d.NewText)))
 	adds, dels := 0, 0
 	for _, o := range ops {
 		switch o.kind {
@@ -282,7 +283,7 @@ func diffLines(d *acp.ToolCallContentDiff, width int) []line {
 			dels++
 		}
 	}
-	out := []line{{{d.Path + " ", stAccent}, {fmt.Sprintf("+%d", adds), stGreen}, {" ", stDim}, {fmt.Sprintf("-%d", dels), stRed}}}
+	out := []render.Line{{{Text: d.Path + " ", St: render.StAccent}, {Text: fmt.Sprintf("+%d", adds), St: render.StGreen}, {Text: " ", St: render.StDim}, {Text: fmt.Sprintf("-%d", dels), St: render.StRed}}}
 	// Show changes with three lines of context, eliding the rest.
 	const ctx = 3
 	keep := make([]bool, len(ops))
@@ -300,24 +301,24 @@ func diffLines(d *acp.ToolCallContentDiff, width int) []line {
 			continue
 		}
 		if skipped {
-			out = append(out, line{{"  ⋯", stFaint}})
+			out = append(out, render.Line{{Text: "  ⋯", St: render.StFaint}})
 			skipped = false
 		}
 		var st tcell.Style
 		var sign string
 		switch o.kind {
 		case '+':
-			st, sign = tcell.StyleDefault.Foreground(cGreen).Background(cAddBg), "+ "
+			st, sign = tcell.StyleDefault.Foreground(render.CGreen).Background(render.CAddBg), "+ "
 		case '-':
-			st, sign = tcell.StyleDefault.Foreground(cRed).Background(cDelBg), "- "
+			st, sign = tcell.StyleDefault.Foreground(render.CRed).Background(render.CDelBg), "- "
 		default:
-			st, sign = stDim, "  "
+			st, sign = render.StDim, "  "
 		}
-		text := truncate(sign+o.text, width)
+		text := render.Truncate(sign+o.text, width)
 		if o.kind != ' ' {
 			text += strings.Repeat(" ", max(0, width-len([]rune(text))))
 		}
-		out = append(out, line{{text, st}})
+		out = append(out, render.Line{{Text: text, St: st}})
 	}
 	return out
 }

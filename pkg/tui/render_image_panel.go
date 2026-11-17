@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/gfx-labs/wist/pkg/render"
 	"github.com/gfx-labs/wist/pkg/termimg"
 )
 
@@ -197,7 +198,7 @@ func (g *gfxState) drawImage(im *storedImage, r rect, covered bool) error {
 	sc := g.sc
 	switch g.proto {
 	case termimg.Off:
-		drawStr(sc, r.x, r.y, r.x+r.w, "image display is off (WIST_IMAGES)", stFaint.Italic(true))
+		render.DrawStr(sc, r.x, r.y, r.x+r.w, "image display is off (WIST_IMAGES)", render.StFaint.Italic(true))
 		return nil
 	case termimg.Blocks:
 		img, err := g.decoded(im, r.w, r.h*2)
@@ -288,7 +289,7 @@ func rgbaColor(c interface{ RGBA() (r, g, b, a uint32) }) tcell.Color {
 	if a == 0 {
 		return tcell.ColorDefault
 	}
-	return fitColor(tcell.NewRGBColor(int32(r>>8), int32(gg>>8), int32(b>>8)))
+	return render.FitColor(tcell.NewRGBColor(int32(r>>8), int32(gg>>8), int32(b>>8)))
 }
 
 // drawImagePanel fills the panel area with the current image and its
@@ -296,7 +297,7 @@ func rgbaColor(c interface{ RGBA() (r, g, b, a uint32) }) tcell.Color {
 func (u *UI) drawImagePanel(x, top, w, bottom int) {
 	im := imgs.current()
 	if im == nil {
-		drawStr(u.sc, x, top, x+w, "no images yet: paste one with ctrl+v", stFaint.Italic(true))
+		render.DrawStr(u.sc, x, top, x+w, "no images yet: paste one with ctrl+v", render.StFaint.Italic(true))
 		return
 	}
 	name := im.name
@@ -308,13 +309,13 @@ func (u *UI) drawImagePanel(x, top, w, bottom int) {
 		cap += fmt.Sprintf(" · %dx%d", im.w, im.h)
 	}
 	cap += fmt.Sprintf(" · %s · %d/%d", sizeLabel(len(im.data)), imgs.cur+1, len(imgs.list))
-	drawStr(u.sc, x, top, x+w, truncate(cap, w), stDim)
+	render.DrawStr(u.sc, x, top, x+w, render.Truncate(cap, w), render.StDim)
 	if len(imgs.list) > 1 && top+1 <= bottom {
-		drawStr(u.sc, x, top+1, x+w, "[ ] or alt+[ ] cycle", stFaint)
+		render.DrawStr(u.sc, x, top+1, x+w, "[ ] or alt+[ ] cycle", render.StFaint)
 	}
 	r := rect{x, top + 2, w, bottom - top - 1}
 	covered := u.picker != nil || u.comp != nil
 	if err := gfx.drawImage(im, r, covered); err != nil {
-		drawStr(u.sc, x, r.y, x+w, truncate("cannot show image: "+err.Error(), w), stRed)
+		render.DrawStr(u.sc, x, r.y, x+w, render.Truncate("cannot show image: "+err.Error(), w), render.StRed)
 	}
 }

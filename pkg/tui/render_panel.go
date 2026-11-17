@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/gfx-labs/wist/pkg/render"
 	"github.com/rivo/uniseg"
 )
 
@@ -18,7 +20,7 @@ type panelState struct {
 	scroll         int
 	x, top, bottom int
 	cacheKey       string
-	cacheLines     []line
+	cacheLines     []render.Line
 }
 
 func (u *UI) togglePanel(mode string) {
@@ -40,7 +42,7 @@ func (u *UI) togglePanel(mode string) {
 }
 
 // panelContent picks what the panel shows and renders it for width w.
-func (u *UI) panelContent(w int) (string, []line) {
+func (u *UI) panelContent(w int) (string, []render.Line) {
 	mode := rs.panel.mode
 	src := rs.panel.pinned
 	if src == "" {
@@ -50,8 +52,8 @@ func (u *UI) panelContent(w int) (string, []line) {
 				continue
 			}
 			for j := len(b.codes) - 1; j >= 0; j-- {
-				if b.codes[j].closed && strings.EqualFold(b.codes[j].lang, "mermaid") {
-					src = b.codes[j].text
+				if b.codes[j].Closed && strings.EqualFold(b.codes[j].Lang, "mermaid") {
+					src = b.codes[j].Text
 					break
 				}
 			}
@@ -60,10 +62,10 @@ func (u *UI) panelContent(w int) (string, []line) {
 	if mode != "tool" && src != "" {
 		key := "d\x00" + src
 		if rs.panel.cacheKey != key {
-			ls := mermaid(src)
+			ls := render.Mermaid(src)
 			if ls == nil {
 				for _, s := range strings.Split(src, "\n") {
-					ls = append(ls, line{{s, stDim}})
+					ls = append(ls, render.Line{{Text: s, St: render.StDim}})
 				}
 			}
 			rs.panel.cacheKey, rs.panel.cacheLines = key, ls
@@ -74,38 +76,38 @@ func (u *UI) panelContent(w int) (string, []line) {
 		if b := u.blocks[i]; b.kind == kindTool {
 			body := b.bodyLines(w)
 			head := b.toolLines(w, false)[0]
-			return "tool", append([]line{head, {}}, body...)
+			return "tool", append([]render.Line{head, {}}, body...)
 		}
 	}
-	return "panel", []line{{{"nothing to show yet: ask for a ```mermaid diagram or run a tool", stFaint.Italic(true)}}}
+	return "panel", []render.Line{{{Text: "nothing to show yet: ask for a ```mermaid diagram or run a tool", St: render.StFaint.Italic(true)}}}
 }
 
 func (u *UI) drawSidePanel(x, top, w, bottom int) {
 	sc := u.sc
 	rs.panel.x, rs.panel.top, rs.panel.bottom = x-1, top, bottom
 	for y := top; y <= bottom; y++ {
-		sc.SetContent(x-1, y, '│', nil, stFaint)
+		sc.SetContent(x-1, y, '│', nil, render.StFaint)
 	}
 	if len(u.plan) > 0 && !u.planHidden {
 		pl := u.planLines(w - 2)
 		pl = pl[:min(len(pl), (bottom-top)/3)]
 		for _, l := range pl {
-			drawLine(sc, x+1, top, x+w, l)
+			render.DrawLine(sc, x+1, top, x+w, l)
 			top++
 		}
 		for i := x; i < x+w; i++ {
-			sc.SetContent(i, top, '─', nil, stFaint)
+			sc.SetContent(i, top, '─', nil, render.StFaint)
 		}
 		top++
 	}
 	if rs.panel.mode == "image" && imgs.current() != nil {
-		drawStr(sc, x+1, top, x+w, " image · alt+i ", stAccent.Bold(true))
+		render.DrawStr(sc, x+1, top, x+w, " image · alt+i ", render.StAccent.Bold(true))
 		u.drawImagePanel(x+1, top+1, w-2, bottom)
 		return
 	}
 	title, body := u.panelContent(w - 2)
 	head := " " + title + " · alt+i "
-	drawStr(sc, x+1, top, x+w, head, stAccent.Bold(true))
+	render.DrawStr(sc, x+1, top, x+w, head, render.StAccent.Bold(true))
 	top++
 	h := bottom - top + 1
 	if h <= 0 {
@@ -116,10 +118,10 @@ func (u *UI) drawSidePanel(x, top, w, bottom int) {
 		if i >= h {
 			break
 		}
-		drawLine(sc, x+1, top+i, x+w, l)
+		render.DrawLine(sc, x+1, top+i, x+w, l)
 	}
 	if more := len(body) - rs.panel.scroll - h; more > 0 {
-		msg := " ↓ " + itoa(more) + " "
-		drawStr(sc, x+w-uniseg.StringWidth(msg)-1, bottom, x+w, msg, tcell.StyleDefault.Foreground(cText).Background(cSelBg))
+		msg := " ↓ " + strconv.Itoa(more) + " "
+		render.DrawStr(sc, x+w-uniseg.StringWidth(msg)-1, bottom, x+w, msg, tcell.StyleDefault.Foreground(render.CText).Background(render.CSelBg))
 	}
 }

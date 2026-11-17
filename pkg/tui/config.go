@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/gfx-labs/wist/pkg/notify"
+	"github.com/gfx-labs/wist/pkg/render"
 )
 
 // Config is ~/.config/wist/config.toml. Only a small TOML subset is
@@ -210,101 +209,10 @@ func scalar(s string) (val, rest string, err error) {
 
 // --- themes -------------------------------------------------------------
 
-// themeColors points at the color variables declared in markdown.go so a
-// theme can replace them. The style variables built from them are rebuilt
-// by applyTheme.
-var themeColors = map[string]*tcell.Color{
-	"text": &cText, "dim": &cDim, "faint": &cFaint, "accent": &cAccent, "user": &cUser,
-	"green": &cGreen, "red": &cRed, "yellow": &cYellow, "cyan": &cCyan, "orange": &cOrange,
-	"code_bg": &cCodeBg, "panel_bg": &cPanelBg, "sel_bg": &cSelBg, "add_bg": &cAddBg, "del_bg": &cDelBg,
-}
-
-var themePresets = map[string]map[string]string{
-	"dark": {
-		"text": "#d8dbe2", "dim": "#7a808c", "faint": "#4a4f5a", "accent": "#8ab4f8", "user": "#c3a6ff",
-		"green": "#8bd58b", "red": "#f28b82", "yellow": "#f0c674", "cyan": "#7dd3e0", "orange": "#f5a97f",
-		"code_bg": "#1e2127", "panel_bg": "#23262d", "sel_bg": "#333a4a", "add_bg": "#1c3323", "del_bg": "#3b1f22",
-	},
-	"light": {
-		"text": "#24292f", "dim": "#6e7781", "faint": "#afb8c1", "accent": "#0969da", "user": "#8250df",
-		"green": "#1a7f37", "red": "#cf222e", "yellow": "#9a6700", "cyan": "#1b7c83", "orange": "#bc4c00",
-		"code_bg": "#f6f8fa", "panel_bg": "#eaeef2", "sel_bg": "#d0d7de", "add_bg": "#dafbe1", "del_bg": "#ffebe9",
-	},
-	"catppuccin-mocha": {
-		"text": "#cdd6f4", "dim": "#9399b2", "faint": "#585b70", "accent": "#89b4fa", "user": "#cba6f7",
-		"green": "#a6e3a1", "red": "#f38ba8", "yellow": "#f9e2af", "cyan": "#94e2d5", "orange": "#fab387",
-		"code_bg": "#181825", "panel_bg": "#313244", "sel_bg": "#45475a", "add_bg": "#2a3a2e", "del_bg": "#3e2a33",
-	},
-	"gruvbox": {
-		"text": "#ebdbb2", "dim": "#a89984", "faint": "#665c54", "accent": "#83a598", "user": "#d3869b",
-		"green": "#b8bb26", "red": "#fb4934", "yellow": "#fabd2f", "cyan": "#8ec07c", "orange": "#fe8019",
-		"code_bg": "#1d2021", "panel_bg": "#3c3836", "sel_bg": "#504945", "add_bg": "#32361a", "del_bg": "#3c1f1e",
-	},
-	"tokyonight": {
-		"text": "#c0caf5", "dim": "#737aa2", "faint": "#414868", "accent": "#7aa2f7", "user": "#bb9af7",
-		"green": "#9ece6a", "red": "#f7768e", "yellow": "#e0af68", "cyan": "#7dcfff", "orange": "#ff9e64",
-		"code_bg": "#16161e", "panel_bg": "#1f2335", "sel_bg": "#2e3c64", "add_bg": "#20303b", "del_bg": "#37222c",
-	},
-}
-
-func themeNames() []string {
-	var out []string
-	for n := range themePresets {
-		out = append(out, n)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// applyTheme sets the color variables from a preset and overrides and
-// rebuilds the derived styles. It returns warnings for bad entries.
-func applyTheme(preset string, overrides map[string]string) []string {
-	var warn []string
-	if preset == "" {
-		preset = "dark"
-	}
-	base, ok := themePresets[preset]
-	if !ok {
-		warn = append(warn, fmt.Sprintf("theme: unknown preset %q (have %s)", preset, strings.Join(themeNames(), ", ")))
-		base = themePresets["dark"]
-	}
-	set := func(k, v string) {
-		p, ok := themeColors[k]
-		if !ok {
-			warn = append(warn, fmt.Sprintf("theme: unknown color %q", k))
-			return
-		}
-		c := tcell.GetColor(v)
-		if c == tcell.ColorDefault && v != "default" {
-			warn = append(warn, fmt.Sprintf("theme: bad color %q for %s", v, k))
-			return
-		}
-		*p = c
-	}
-	for k, v := range base {
-		set(k, v)
-	}
-	for k, v := range overrides {
-		set(k, v)
-	}
-	stBase = tcell.StyleDefault.Foreground(cText)
-	stDim = tcell.StyleDefault.Foreground(cDim)
-	stFaint = tcell.StyleDefault.Foreground(cFaint)
-	stAccent = tcell.StyleDefault.Foreground(cAccent)
-	stUser = tcell.StyleDefault.Foreground(cUser)
-	stGreen = tcell.StyleDefault.Foreground(cGreen)
-	stRed = tcell.StyleDefault.Foreground(cRed)
-	stYellow = tcell.StyleDefault.Foreground(cYellow)
-	stCyan = tcell.StyleDefault.Foreground(cCyan)
-	stCode = tcell.StyleDefault.Foreground(cOrange)
-	refreshStyles()
-	return warn
-}
-
 func (u *UI) pickTheme() {
 	var items []pickItem
 	sel := 0
-	for i, n := range themeNames() {
+	for i, n := range render.ThemeNames() {
 		if n == u.themeName {
 			sel = i
 		}
@@ -314,12 +222,12 @@ func (u *UI) pickTheme() {
 }
 
 func (u *UI) setTheme(name string) {
-	if _, ok := themePresets[name]; !ok {
-		u.errorf("unknown theme %q (have %s)", name, strings.Join(themeNames(), ", "))
+	if !render.HasTheme(name) {
+		u.errorf("unknown theme %q (have %s)", name, strings.Join(render.ThemeNames(), ", "))
 		return
 	}
 	// Explicit color overrides from the config still apply on top.
-	for _, w := range applyTheme(name, u.cfg.Colors) {
+	for _, w := range render.ApplyTheme(name, u.cfg.Colors) {
 		u.notify(w)
 	}
 	u.themeName = name
