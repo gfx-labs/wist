@@ -13,6 +13,8 @@ import (
 
 func (u *UI) draw() {
 	sc := u.sc
+	u.termInit()
+	gfx.beginFrame(sc)
 	sc.Clear()
 	w, h := sc.Size()
 	if w < 20 || h < 8 {
@@ -41,6 +43,7 @@ func (u *UI) draw() {
 	inputTop := y - len(rows) // border line
 	u.drawInput(inputTop, w, rows)
 	if u.picker == nil {
+		u.cursorTint()
 		sc.ShowCursor(2+cx, inputTop+1+cy-first)
 	} else {
 		sc.HideCursor()
@@ -98,6 +101,7 @@ func (u *UI) draw() {
 		u.drawPicker(w, h)
 	}
 	sc.Show()
+	gfx.endFrame()
 }
 
 func withBg(l line, bg tcell.Color) line {

@@ -355,13 +355,13 @@ func linkRefs(lines []string) map[string]string {
 	return refs
 }
 
-// imageCard renders the "[image mime WxH]" placeholder produced for image
-// content blocks.
+// imageCard renders the image placeholder produced for image content
+// blocks as a clickable card.
 func imageCard(s string) (line, bool) {
-	if !strings.HasPrefix(s, "[image ") || !strings.HasSuffix(s, "]") {
+	if !strings.HasPrefix(s, imageMarker) {
 		return nil, false
 	}
-	return line{{" 🖼 " + s[1:len(s)-1] + " ", tcell.StyleDefault.Foreground(cText).Background(cPanelBg)}}, true
+	return line{{" " + s + " ", tcell.StyleDefault.Foreground(cText).Background(cPanelBg)}}, true
 }
 
 func headingLevel(s string) int {

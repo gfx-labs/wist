@@ -174,7 +174,7 @@ func TestSelectedText(t *testing.T) {
 func TestImageSize(t *testing.T) {
 	// 1x1 PNG.
 	png := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-	if s := imagePlaceholder("image/png", png); !strings.Contains(s, "[image image/png 1x1]") {
+	if s := imagePlaceholder("image/png", png); !strings.Contains(s, "🖼 #") || !strings.Contains(s, "image/png 1x1") {
 		t.Errorf("placeholder %q", s)
 	}
 }

@@ -13,7 +13,7 @@ import (
 
 type panelState struct {
 	open           bool
-	mode           string // "", "diagram" or "tool"
+	mode           string // "", "diagram", "tool" or "image"
 	pinned         string // mermaid source clicked last
 	scroll         int
 	x, top, bottom int
@@ -23,14 +23,14 @@ type panelState struct {
 
 func (u *UI) togglePanel(mode string) {
 	switch mode {
-	case "diagram", "tool":
+	case "diagram", "tool", "image":
 		rs.panel.open, rs.panel.mode = true, mode
 	case "", "toggle":
 		rs.panel.open = !rs.panel.open
 	case "off", "close":
 		rs.panel.open = false
 	default:
-		u.notify("usage: /panel [diagram|tool|off]")
+		u.notify("usage: /panel [diagram|tool|image|off]")
 		return
 	}
 	rs.panel.scroll = 0
@@ -97,6 +97,11 @@ func (u *UI) drawSidePanel(x, top, w, bottom int) {
 			sc.SetContent(i, top, '─', nil, stFaint)
 		}
 		top++
+	}
+	if rs.panel.mode == "image" && imgs.current() != nil {
+		drawStr(sc, x+1, top, x+w, " image · alt+i ", stAccent.Bold(true))
+		u.drawImagePanel(x+1, top+1, w-2, bottom)
+		return
 	}
 	title, body := u.panelContent(w - 2)
 	head := " " + title + " · alt+i "

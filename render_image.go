@@ -4,17 +4,25 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
-// imagePlaceholder describes an image content block as "[image mime WxH]".
-// Only the first bytes of the base64 data are decoded to read the size.
+// imagePlaceholder registers an image content block in the image store and
+// describes it as a one line card: "🖼 #N mime WxH · click or alt+i".
 func imagePlaceholder(mime, data string) string {
 	w, h := imageSize(data)
-	if w > 0 && h > 0 {
-		return fmt.Sprintf("\n[image %s %dx%d]\n", mime, w, h)
+	s := "\n" + imageMarker
+	if n := imgs.addB64("", mime, data); n > 0 {
+		s += strconv.Itoa(n)
+	} else {
+		s += "?"
 	}
-	return "\n[image " + mime + "]\n"
+	s += " " + mime
+	if w > 0 && h > 0 {
+		s += fmt.Sprintf(" %dx%d", w, h)
+	}
+	return s + " · click or alt+i\n"
 }
 
 func imageSize(data string) (int, int) {

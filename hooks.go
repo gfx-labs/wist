@@ -28,7 +28,17 @@ func (u *UI) renderKey(ev *tcell.EventKey) bool {
 		case r == 'i':
 			u.togglePanel("")
 			return true
+		case r == '[' || r == ']':
+			if rs.panel.open && rs.panel.mode == "image" {
+				u.cycleImage(map[rune]int{'[': -1, ']': 1}[r])
+				return true
+			}
 		}
+	}
+	if ev.Key() == tcell.KeyRune && ev.Modifiers() == 0 && (ev.Rune() == '[' || ev.Rune() == ']') &&
+		rs.panel.open && rs.panel.mode == "image" && len(u.ed.buf) == 0 && len(imgs.list) > 1 {
+		u.cycleImage(map[rune]int{'[': -1, ']': 1}[ev.Rune()])
+		return true
 	}
 	if ev.Key() == tcell.KeyEscape && rs.sel.active {
 		rs.sel = selection{}
@@ -62,6 +72,12 @@ func (u *UI) renderMouse(ev *tcell.EventMouse) bool {
 				return false
 			}
 			li := v.start + y - v.top
+			if li < len(rs.lines) {
+				if n := imageNumIn(rs.lines[li]); n > 0 {
+					u.openImage(n)
+					return true
+				}
+			}
 			if ce := rs.codeAt(li); ce != nil {
 				if ce.ref.closed {
 					u.copyCodeEntry(ce)
@@ -104,7 +120,7 @@ func (u *UI) renderMouse(ev *tcell.EventMouse) bool {
 var renderCommands = []localCmd{
 	{"copy-code", "copy code block n (alt+1..9, 1 = newest on screen) or click ⧉ copy"},
 	{"search", "search the transcript (alt+/, enter/n/N next/prev, esc closes)"},
-	{"panel", "toggle the side panel with the diagram or tool output (alt+i)"},
+	{"panel", "toggle the side panel: diagram, tool output or image (alt+i; [ ] cycle images)"},
 }
 
 // renderCommand runs a slash command owned by the rendering code and

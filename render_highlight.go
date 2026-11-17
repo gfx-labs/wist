@@ -17,6 +17,7 @@ func init() { refreshStyles() }
 // refreshStyles rebuilds the styles derived from theme colors. applyTheme
 // calls it after changing the palette.
 func refreshStyles() {
+	fitPalette()
 	stKeyword = tcell.StyleDefault.Foreground(cAccent)
 	stType = tcell.StyleDefault.Foreground(cCyan)
 	stFunc = tcell.StyleDefault.Foreground(cUser)
