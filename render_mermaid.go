@@ -150,6 +150,9 @@ func (c *canvas) lines() []line {
 	for len(out) > 0 && len(out[len(out)-1]) == 0 {
 		out = out[:len(out)-1]
 	}
+	for len(out) > 0 && len(out[0]) == 0 {
+		out = out[1:]
+	}
 	return out
 }
 
