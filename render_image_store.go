@@ -31,7 +31,7 @@ type imageStore struct {
 	list  []*storedImage
 	total int
 	seq   int
-	cur   int // index into list of the panel's image
+	cur   int            // index into list of the panel's image
 	seen  map[string]int // image key -> number, kept after eviction
 	base  uint32
 }
