@@ -267,6 +267,9 @@ func (u *UI) handleEvent(ev tcell.Event) {
 	case *tcell.EventPaste:
 		u.pasting = ev.Start()
 	case *tcell.EventMouse:
+		if u.renderMouse(ev) {
+			return
+		}
 		switch ev.Buttons() {
 		case tcell.WheelUp:
 			u.scroll += 3
@@ -292,6 +295,9 @@ func (u *UI) handleKey(ev *tcell.EventKey) {
 	}
 	if u.picker != nil {
 		u.pickerKey(ev)
+		return
+	}
+	if u.renderKey(ev) {
 		return
 	}
 	if len(u.perms) > 0 && u.permKey(ev) {
