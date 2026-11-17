@@ -463,7 +463,7 @@ func inline(s string, base tcell.Style) []span {
 			emit()
 			text := s[i+1 : i+close]
 			url := s[i+close+2 : i+close+end]
-			out = append(out, span{text, base.Foreground(cAccent).Underline(true)})
+			out = append(out, span{text, linkStyle(base.Foreground(cAccent), url)})
 			if url != text {
 				out = append(out, span{" (" + url + ")", stFaint})
 			}
@@ -473,7 +473,7 @@ func inline(s string, base tcell.Style) []span {
 		}
 	}
 	emit()
-	return out
+	return linkify(out)
 }
 
 // emphasisEdge reports whether a single * or _ at i opens or closes

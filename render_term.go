@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -165,4 +166,38 @@ func fileURL(p string) string {
 	}
 	host, _ := os.Hostname()
 	return "file://" + host + p
+}
+
+var urlRE = regexp.MustCompile(`https?://[^\s<>"'` + "`" + `]+`)
+
+// linkify turns bare http(s) URLs in spans into hyperlinks, keeping the
+// visible text. Trailing punctuation stays out of the link.
+func linkify(spans []span) []span {
+	var out []span
+	for _, s := range spans {
+		if s.st.GetUnderlineStyle() != tcell.UnderlineStyleNone || !strings.Contains(s.text, "://") {
+			out = append(out, s)
+			continue
+		}
+		rest := s.text
+		for {
+			loc := urlRE.FindStringIndex(rest)
+			if loc == nil {
+				break
+			}
+			u := strings.TrimRight(rest[loc[0]:loc[1]], ".,;:!?)]}*_")
+			if strings.Count(u, "(") > strings.Count(u, ")") && loc[0]+len(u) < len(rest) && rest[loc[0]+len(u)] == ')' {
+				u += ")"
+			}
+			if loc[0] > 0 {
+				out = append(out, span{rest[:loc[0]], s.st})
+			}
+			out = append(out, span{u, linkStyle(s.st, u)})
+			rest = rest[loc[0]+len(u):]
+		}
+		if rest != "" {
+			out = append(out, span{rest, s.st})
+		}
+	}
+	return out
 }

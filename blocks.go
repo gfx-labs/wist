@@ -96,7 +96,13 @@ func (b *block) lines(width int, expandAll bool, showThinking bool) []line {
 	case kindNotice:
 		out = wrap([]span{{clean(b.text), stYellow}}, width, line{{"⚑ ", stYellow}}, line{{"  ", stYellow}})
 	case kindError:
-		out = wrap([]span{{clean(b.text), stRed}}, width, line{{"✗ ", stRed}}, line{{"  ", stRed}})
+		msg := clean(b.text)
+		key, rest, _ := strings.Cut(msg, ":")
+		sp := []span{{key, errorStyle(stRed)}}
+		if rest != "" || strings.HasSuffix(msg, ":") {
+			sp = append(sp, span{":" + rest, stRed})
+		}
+		out = wrap(sp, width, line{{"✗ ", stRed}}, line{{"  ", stRed}})
 	case kindInfo:
 		out = wrap([]span{{clean(b.text), stDim}}, width, line{{"· ", stDim}}, line{{"  ", stDim}})
 	case kindCompaction:
@@ -164,9 +170,20 @@ func (b *block) toolLines(width int, exp bool) []line {
 	summary := b.summary()
 	room := width - head.width() - len(dur) - 2
 	t := truncate(title, max(room, 8))
-	head = append(head, span{t, stBase.Bold(true)})
+	tst := stBase.Bold(true)
+	if b.status == acp.ToolCallStatusFailed {
+		tst = errorStyle(tst)
+	}
+	head = append(head, span{t, tst})
 	if s := truncate(summary, room-len([]rune(t))-1); s != "" && summary != "" {
-		head = append(head, span{" " + s, stDim})
+		head = append(head, span{" ", stDim})
+		sst := stDim
+		if len(b.locations) > 0 {
+			if u := fileURL(b.locations[0].Path); u != "" {
+				sst = sst.Url(u)
+			}
+		}
+		head = append(head, span{s, sst})
 	}
 	head = append(head, span{dur, stFaint})
 	out := []line{head}
@@ -220,7 +237,7 @@ func (b *block) bodyLines(width int) []line {
 				continue
 			}
 			for _, raw := range strings.Split(text, "\n") {
-				out = append(out, wrap([]span{{raw, stDim}}, width, nil, nil)...)
+				out = append(out, wrap(linkify([]span{{raw, stDim}}), width, nil, nil)...)
 			}
 		case c.Terminal != nil:
 			out = append(out, line{{"[terminal " + string(c.Terminal.TerminalId) + "]", stDim}})

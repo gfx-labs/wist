@@ -205,11 +205,14 @@ func (u *UI) decorateTranscript() {
 			if m.line < v.start || m.line >= v.end {
 				continue
 			}
-			st := tcell.StyleDefault.Background(cYellow).Foreground(tcell.ColorBlack)
-			if i != rs.search.cur {
-				st = tcell.StyleDefault.Background(cSelBg).Foreground(cYellow)
-			}
-			restyle(sc, v.x+m.col, v.top+m.line-v.start, m.n, func(tcell.Style) tcell.Style { return st })
+			cur := i == rs.search.cur
+			restyle(sc, v.x+m.col, v.top+m.line-v.start, m.n, func(old tcell.Style) tcell.Style {
+				if cur {
+					return tcell.StyleDefault.Background(cYellow).Foreground(tcell.ColorBlack).Bold(true).Underline(tcell.UnderlineStyleDouble, tcell.ColorBlack)
+				}
+				// Other hits keep their colors, underlined in yellow on the selection tint.
+				return old.Background(cSelBg).Underline(tcell.UnderlineStyleSolid, cYellow)
+			})
 		}
 	}
 	if rs.sel.active {
