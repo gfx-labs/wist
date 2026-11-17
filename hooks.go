@@ -11,3 +11,11 @@ func (u *UI) renderKey(ev *tcell.EventKey) bool { return false }
 // renderMouse handles a mouse event meant for rendering features, such as a
 // click on a code block's copy button.
 func (u *UI) renderMouse(ev *tcell.EventMouse) bool { return false }
+
+// renderCommands are slash commands owned by the rendering code. They are
+// listed in completion and /help next to the local commands.
+var renderCommands []localCmd
+
+// renderCommand runs a slash command owned by the rendering code and
+// reports whether it handled it.
+func (u *UI) renderCommand(name, arg string) bool { return false }

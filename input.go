@@ -169,7 +169,7 @@ func (u *UI) updateCompletion() {
 		q := strings.ToLower(tok[1:])
 		var items []pickItem
 		seen := map[string]bool{}
-		for _, c := range localCommands {
+		for _, c := range append(localCommands[:len(localCommands):len(localCommands)], renderCommands...) {
 			if strings.HasPrefix(c.name, q) {
 				items = append(items, pickItem{label: "/" + c.name, detail: c.desc, value: "/" + c.name + " "})
 				seen[c.name] = true
@@ -613,6 +613,9 @@ func (u *UI) localCommand(text string) bool {
 	case "quit", "exit", "q":
 		u.quit = true
 	default:
+		if u.renderCommand(name, arg) {
+			return true
+		}
 		for _, c := range u.commands {
 			if c.Name == name {
 				return false
@@ -674,7 +677,7 @@ func helpText(u *UI) string {
 		fmt.Fprintf(&b, "| %s | %s |\n", k[0], k[1])
 	}
 	b.WriteString("\n## commands\n\n")
-	for _, c := range localCommands {
+	for _, c := range append(localCommands[:len(localCommands):len(localCommands)], renderCommands...) {
 		fmt.Fprintf(&b, "- `/%s` %s\n", c.name, c.desc)
 	}
 	if len(u.commands) > 0 {
