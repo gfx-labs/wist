@@ -46,8 +46,21 @@ type UI struct {
 	// turn
 	busy      bool
 	turnStart time.Time
-	queue     []string
+	queue     []string // soft interrupts, sent as one prompt when the turn ends
+	urgent    bool     // the queue is sent with an interruption note after a cancel
 	lastStop  string
+
+	// config, keys and theme
+	cfg       config
+	keymap    keymap
+	themeName string
+
+	// session ops
+	prevSession acp.SessionId // where /back returns after /fork or an in-window /btw
+
+	// edit stats; statsSummary is a short form for the status bar
+	editStats    editStats
+	statsSummary string
 
 	// input
 	ed      editor
@@ -67,7 +80,7 @@ type UI struct {
 	planHidden   bool
 }
 
-func newUI(o options) (*UI, error) {
+func newUI(o options, cfg config) (*UI, error) {
 	sc, err := tcell.NewScreen()
 	if err != nil {
 		return nil, err
@@ -81,12 +94,24 @@ func newUI(o options) (*UI, error) {
 	}
 	sc.SetCursorStyle(tcell.CursorStyleSteadyBar)
 	sc.SetTitle("wist")
-	return &UI{
-		opts:  o,
-		sc:    sc,
-		funcs: make(chan func(*UI), 4096),
-		tools: map[acp.ToolCallId]*block{},
-	}, nil
+	u := &UI{
+		opts:   o,
+		sc:     sc,
+		funcs:  make(chan func(*UI), 4096),
+		tools:  map[acp.ToolCallId]*block{},
+		cfg:    cfg,
+		keymap: buildKeymap(cfg.keys),
+	}
+	u.themeName = cfg.theme
+	if u.themeName == "" {
+		u.themeName = "dark"
+	}
+	warnings := append(append([]string{}, cfg.warnings...), applyTheme(cfg.theme, cfg.colors)...)
+	warnings = append(warnings, u.keymap.warnings...)
+	for _, w := range warnings {
+		u.addBlock(&block{kind: kindNotice, text: w})
+	}
+	return u, nil
 }
 
 func (u *UI) post(f func(*UI)) { u.funcs <- f }
@@ -227,6 +252,7 @@ func (u *UI) resetSession(id acp.SessionId) {
 	u.title = ""
 	u.ctxUsed, u.ctxSize, u.cost, u.turnUsage = 0, 0, nil, nil
 	u.scroll = 0
+	u.editStats, u.statsSummary = editStats{}, ""
 	u.sc.SetTitle("wist")
 }
 
@@ -374,6 +400,12 @@ func (u *UI) finishTool(b *block) {
 	if (b.status == acp.ToolCallStatusCompleted || b.status == acp.ToolCallStatusFailed) && b.finished.IsZero() {
 		b.finished = time.Now()
 	}
+	// Count diffs once the edit has landed, so streaming updates do not
+	// rerun the line diff.
+	if b.status == acp.ToolCallStatusCompleted {
+		u.editStats.record(b.toolID, b.content)
+		u.statsSummary = u.editStats.summary()
+	}
 }
 
 // --- prompting ----------------------------------------------------------
@@ -469,21 +501,7 @@ func (u *UI) endTurn(id acp.SessionId, resp acp.PromptResponse, err error) {
 			u.info(msg)
 		}
 	}
-	if len(u.queue) > 0 {
-		next := u.queue[0]
-		u.queue = u.queue[1:]
-		for _, b := range u.blocks {
-			if b.queued && b.text == next {
-				b.queued = false
-				b.dirty()
-				// Move it to the end so the transcript reads in order.
-				u.blocks = slices.DeleteFunc(u.blocks, func(x *block) bool { return x == b })
-				u.blocks = append(u.blocks, b)
-				break
-			}
-		}
-		u.startTurn(next)
-	}
+	u.sendQueued()
 }
 
 func (u *UI) cancelTurn() {
@@ -705,13 +723,30 @@ func (u *UI) pickSession() {
 				u.notify("no stored sessions for " + cwd)
 				return
 			}
-			u.openPicker("resume session", items, 0, func(it pickItem) {
+			u.openPicker("resume session · ctrl+d delete · ctrl+a archive · ctrl+r rename", items, 0, func(it pickItem) {
 				if u.busy {
 					u.notify("wait for the turn to end first")
 					return
 				}
 				go u.loadSession(acp.SessionId(it.value))
 			})
+			u.picker.keys = func(ev *tcell.EventKey, it pickItem) bool {
+				id := acp.SessionId(it.value)
+				switch ev.Key() {
+				case tcell.KeyCtrlD:
+					u.picker = nil
+					u.confirmDelete(id, it.label)
+				case tcell.KeyCtrlA:
+					u.picker = nil
+					u.archiveSession(id)
+				case tcell.KeyCtrlR:
+					u.picker = nil
+					u.ed.set("/rename --id " + it.value + " ")
+				default:
+					return false
+				}
+				return true
+			}
 		})
 	}()
 }

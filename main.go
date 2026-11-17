@@ -20,19 +20,27 @@ import (
 )
 
 type options struct {
-	towa    string
-	args    []string
-	cwd     string
-	resume  string
-	log     string
-	prompt  string
-	noMouse bool
+	towa     string
+	agent    string   // registry agent id; empty means towa
+	args     []string // full argument list for the agent process
+	passArgs []string // the user's extra agent args, forwarded to child windows
+	env      []string
+	cwd      string
+	resume   string
+	log      string
+	prompt   string
+	noMouse  bool
 }
 
-func parseFlags() options {
+func parseFlags(cfg config) options {
 	var o options
 	var extra string
-	flag.StringVar(&o.towa, "towa", "towa", "path of the towa binary")
+	defTowa := cfg.towa
+	if defTowa == "" {
+		defTowa = "towa"
+	}
+	flag.StringVar(&o.towa, "towa", defTowa, "path of the towa binary")
+	flag.StringVar(&o.agent, "agent", cfg.agent, "run this ACP registry agent instead of towa (see `wist agents`)")
 	flag.StringVar(&extra, "towa-args", "", "extra arguments for towa, split on spaces (e.g. \"--models=claude:max/claude-opus-5-5\")")
 	flag.StringVar(&o.cwd, "cwd", "", "working directory of the session (default: current directory)")
 	flag.StringVar(&o.resume, "resume", "", "load the session with this id instead of starting a new one")
@@ -40,14 +48,21 @@ func parseFlags() options {
 	flag.StringVar(&o.prompt, "p", "", "send this prompt as soon as the session is ready")
 	flag.BoolVar(&o.noMouse, "no-mouse", false, "do not capture the mouse (keeps the terminal's own selection)")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: wist [flags] [-- towa args...]\n\n")
+		fmt.Fprintf(os.Stderr, "usage: wist [flags] [-- agent args...]\n       wist agents    list agents in the ACP registry\n\nconfig: %s\n\n", configPath())
 		flag.PrintDefaults()
 	}
 	flag.Parse()
-	if extra != "" {
-		o.args = append(o.args, strings.Fields(extra)...)
+	if o.agent == "towa" {
+		o.agent = ""
 	}
-	o.args = append(o.args, flag.Args()...)
+	if extra != "" {
+		o.passArgs = append(o.passArgs, strings.Fields(extra)...)
+	}
+	o.passArgs = append(o.passArgs, flag.Args()...)
+	if o.agent == "" && extra == "" && flag.NArg() == 0 {
+		o.args = append(o.args, cfg.towaArgs...)
+	}
+	o.args = append(o.args, o.passArgs...)
 	if o.cwd == "" {
 		o.cwd, _ = os.Getwd()
 	}
@@ -60,20 +75,42 @@ func parseFlags() options {
 			home, _ := os.UserHomeDir()
 			dir = filepath.Join(home, ".local", "state")
 		}
-		o.log = filepath.Join(dir, "wist", "towa.log")
+		name := "towa.log"
+		if o.agent != "" {
+			name = o.agent + ".log"
+		}
+		o.log = filepath.Join(dir, "wist", name)
 	}
 	return o
 }
 
 func main() {
-	o := parseFlags()
-	if err := run(o); err != nil {
+	if len(os.Args) > 1 && os.Args[1] == "agents" {
+		if err := listAgents(os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "wist:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	cfg := loadConfig()
+	o := parseFlags(cfg)
+	if o.agent != "" {
+		c, err := resolveAgent(o.agent, func(s string) { fmt.Fprintln(os.Stderr, "wist:", s) })
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "wist:", err)
+			os.Exit(1)
+		}
+		o.towa = c.path
+		o.args = append(append([]string{}, c.args...), o.args...)
+		o.env = c.env
+	}
+	if err := run(o, cfg); err != nil {
 		fmt.Fprintln(os.Stderr, "wist:", err)
 		os.Exit(1)
 	}
 }
 
-func run(o options) error {
+func run(o options, cfg config) error {
 	if err := os.MkdirAll(filepath.Dir(o.log), 0o755); err != nil {
 		return err
 	}
@@ -89,6 +126,9 @@ func run(o options) error {
 
 	cmd := exec.CommandContext(ctx, o.towa, o.args...)
 	cmd.Dir = o.cwd
+	if len(o.env) > 0 {
+		cmd.Env = append(os.Environ(), o.env...)
+	}
 	cmd.Stderr = logFile
 	// Keep towa out of the terminal's process group so Ctrl+C reaches only us.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -106,7 +146,7 @@ func run(o options) error {
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 
-	ui, err := newUI(o)
+	ui, err := newUI(o, cfg)
 	if err != nil {
 		_ = stdin.Close()
 		return err
@@ -134,7 +174,11 @@ func run(o options) error {
 		_ = cmd.Process.Kill()
 	}
 	if ui.lastSession != "" {
-		fmt.Printf("session %s\nresume with: wist --resume %s\n", ui.lastSession, ui.lastSession)
+		agent := ""
+		if o.agent != "" {
+			agent = " --agent " + o.agent
+		}
+		fmt.Printf("session %s\nresume with: wist%s --resume %s\n", ui.lastSession, agent, ui.lastSession)
 	}
 	return runErr
 }

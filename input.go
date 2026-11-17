@@ -30,6 +30,9 @@ type picker struct {
 	shown  []int
 	sel    int
 	choose func(pickItem)
+	// keys, when set, gets keys first with the selected item and reports
+	// whether it handled them.
+	keys func(*tcell.EventKey, pickItem) bool
 }
 
 func (u *UI) openPicker(title string, items []pickItem, sel int, choose func(pickItem)) {
@@ -91,6 +94,9 @@ func fuzzy(s, q string) (int, bool) {
 
 func (u *UI) pickerKey(ev *tcell.EventKey) {
 	p := u.picker
+	if p.keys != nil && p.sel < len(p.shown) && p.keys(ev, p.items[p.shown[p.sel]]) {
+		return
+	}
 	switch ev.Key() {
 	case tcell.KeyEscape, tcell.KeyCtrlC:
 		u.picker = nil
@@ -150,6 +156,17 @@ var localCommands = []localCmd{
 	{"thinking", "toggle showing reasoning"},
 	{"plan", "toggle the plan panel"},
 	{"copy", "copy the last answer to the clipboard"},
+	{"fork", "fork the session and switch to the fork"},
+	{"back", "return to the session before /fork or /btw"},
+	{"rename", "<title> rename the session"},
+	{"archive", "archive the session"},
+	{"delete", "delete the session (asks first)"},
+	{"btw", "<question> ask a side question in a fork (new tmux pane)"},
+	{"split", "open a fork in a new tmux pane (/split new: fresh session)"},
+	{"stats", "files edited and lines changed this session"},
+	{"theme", "pick a color theme"},
+	{"keys", "list key bindings"},
+	{"agents", "pick an agent from the ACP registry"},
 	{"cwd", "show the working directory"},
 	{"info", "show session details"},
 	{"log", "show where towa's log is"},
@@ -305,6 +322,9 @@ func (u *UI) handleKey(ev *tcell.EventKey) {
 	}
 
 	mod := ev.Modifiers()
+	if u.comp != nil && u.comp.sel >= len(u.comp.items) {
+		u.comp = nil
+	}
 	if u.comp != nil {
 		switch ev.Key() {
 		case tcell.KeyUp, tcell.KeyCtrlP:
@@ -335,56 +355,24 @@ func (u *UI) handleKey(ev *tcell.EventKey) {
 		}
 	}
 
+	// Bound actions first, then the fixed editor keys.
+	if name, ok := u.keymap.keys[eventKey(ev)]; ok {
+		if a := actionByName(name); a != nil {
+			a.run(u)
+			if name == "cancel" {
+				u.comp = nil
+				return
+			}
+			u.updateCompletion()
+			return
+		}
+	}
+
 	switch ev.Key() {
-	case tcell.KeyCtrlC:
-		switch {
-		case u.busy:
-			u.cancelTurn()
-		case len(u.ed.buf) > 0:
-			u.ed.clear()
-		case time.Since(u.ctrlC) < 2*time.Second:
-			u.quit = true
-		default:
-			u.ctrlC = time.Now()
-			u.notify("press ctrl+c again to quit")
-		}
-		u.comp = nil
-		return
-	case tcell.KeyCtrlD:
-		if len(u.ed.buf) == 0 {
-			u.quit = true
-		} else {
-			u.ed.del()
-		}
-	case tcell.KeyEscape:
-		if u.busy {
-			u.cancelTurn()
-		} else {
-			u.scroll = 0
-		}
-	case tcell.KeyEnter:
-		if mod&(tcell.ModShift|tcell.ModAlt) != 0 {
-			u.ed.insert("\n")
-			break
-		}
-		// A trailing backslash continues the line, as in a shell.
-		if n := len(u.ed.buf); n > 0 && u.ed.cur == n && u.ed.buf[n-1] == '\\' {
-			u.ed.buf = u.ed.buf[:n-1]
-			u.ed.cur--
-			u.ed.insert("\n")
-			break
-		}
-		text := u.ed.text()
-		u.ed.clear()
-		u.submit(text)
-	case tcell.KeyCtrlJ:
-		u.ed.insert("\n")
 	case tcell.KeyTab:
 		if len(u.ed.buf) == 0 {
 			u.cycleMode()
 		}
-	case tcell.KeyBacktab:
-		u.cycleMode()
 	case tcell.KeyBackspace, tcell.KeyBackspace2:
 		if mod&(tcell.ModAlt|tcell.ModCtrl) != 0 {
 			u.ed.cut(u.ed.wordLeft(), u.ed.cur)
@@ -429,25 +417,6 @@ func (u *UI) handleKey(ev *tcell.EventKey) {
 		u.ed.histPrev()
 	case tcell.KeyCtrlN:
 		u.ed.histNext()
-	case tcell.KeyPgUp:
-		u.scroll += u.pageSize()
-	case tcell.KeyPgDn:
-		u.scroll = max(0, u.scroll-u.pageSize())
-	case tcell.KeyCtrlO:
-		u.toggleLastTool()
-	case tcell.KeyCtrlT:
-		u.showThinking = !u.showThinking
-		u.notify(fmt.Sprintf("show thinking: %v", u.showThinking))
-	case tcell.KeyCtrlL:
-		u.sc.Sync()
-	case tcell.KeyCtrlR:
-		u.pickHistory()
-	case tcell.KeyCtrlS:
-		u.pickSession()
-	case tcell.KeyCtrlG:
-		if m := u.modelOption(); m != nil {
-			u.pickOption(m)
-		}
 	case tcell.KeyRune:
 		if mod&tcell.ModAlt != 0 {
 			switch ev.Rune() {
@@ -457,20 +426,26 @@ func (u *UI) handleKey(ev *tcell.EventKey) {
 				u.ed.cur = u.ed.wordRight()
 			case 'd':
 				u.ed.cut(u.ed.cur, u.ed.wordRight())
-			case 'm':
-				if m := u.modelOption(); m != nil {
-					u.pickOption(m)
-				}
-			case 'e':
-				u.expandAll = !u.expandAll
-			case 'p':
-				u.planHidden = !u.planHidden
 			}
 			break
 		}
 		u.ed.insert(string(ev.Rune()))
 	}
 	u.updateCompletion()
+}
+
+func (u *UI) ctrlCAction() {
+	switch {
+	case u.busy:
+		u.cancelTurn()
+	case len(u.ed.buf) > 0:
+		u.ed.clear()
+	case time.Since(u.ctrlC) < 2*time.Second:
+		u.quit = true
+	default:
+		u.ctrlC = time.Now()
+		u.notify("press ctrl+c again to quit")
+	}
 }
 
 func (u *UI) pageSize() int {
@@ -604,6 +579,49 @@ func (u *UI) localCommand(text string) bool {
 			}
 		}
 		u.notify("nothing to copy")
+	case "fork":
+		u.forkSession()
+	case "back":
+		u.back()
+	case "rename", "title":
+		id := u.session
+		if rest, ok := strings.CutPrefix(arg, "--id "); ok {
+			sid, title, _ := strings.Cut(strings.TrimSpace(rest), " ")
+			id, arg = acp.SessionId(sid), strings.TrimSpace(title)
+		}
+		if id == "" {
+			u.notify("no session yet")
+			return true
+		}
+		u.renameSession(id, arg)
+	case "archive":
+		if u.needIdle() {
+			u.archiveSession(u.session)
+		}
+	case "delete":
+		if u.needIdle() {
+			label := string(u.session)
+			if u.title != "" {
+				label = u.title
+			}
+			u.confirmDelete(u.session, label)
+		}
+	case "btw":
+		u.btw(arg)
+	case "split":
+		u.split(arg == "new")
+	case "stats":
+		u.info(u.editStats.report(u.opts.cwd))
+	case "theme":
+		if arg != "" {
+			u.setTheme(arg)
+		} else {
+			u.pickTheme()
+		}
+	case "keys", "keybindings":
+		u.addBlock(&block{kind: kindAgent, text: u.keysText()})
+	case "agents", "agent":
+		u.pickAgent()
 	case "cwd":
 		u.info(u.opts.cwd)
 	case "info":
@@ -656,23 +674,19 @@ func helpText(u *UI) string {
 	var b strings.Builder
 	b.WriteString("## keys\n\n")
 	b.WriteString("| key | action |\n|---|---|\n")
+	for _, a := range actions {
+		if keys := u.keymap.bindings(a.name); len(keys) > 0 {
+			fmt.Fprintf(&b, "| %s | %s |\n", strings.Join(keys, ", "), a.desc)
+		}
+	}
 	for _, k := range [][2]string{
-		{"enter", "send (queued if a turn is running)"},
-		{"shift/alt+enter, ctrl+j, `\\`+enter", "newline"},
-		{"esc / ctrl+c", "interrupt the turn"},
-		{"ctrl+c twice, ctrl+d", "quit"},
-		{"tab / shift+tab", "complete, or cycle mode"},
+		{"`\\`+enter", "newline"},
+		{"tab", "complete, or cycle mode on an empty line"},
 		{"up/down, ctrl+p/n", "history"},
-		{"ctrl+r", "search history"},
-		{"pgup/pgdn, wheel", "scroll"},
-		{"ctrl+o", "expand last tool output"},
-		{"alt+e", "expand all tool output"},
-		{"ctrl+t", "show thinking"},
-		{"alt+p", "toggle plan panel"},
-		{"ctrl+g, alt+m", "pick model"},
-		{"ctrl+s", "pick session"},
+		{"wheel", "scroll"},
 		{"ctrl+w/u/k/y", "kill word/line, yank"},
 		{"@path", "attach a file"},
+		{"session picker", "ctrl+d delete, ctrl+a archive, ctrl+r rename"},
 	} {
 		fmt.Fprintf(&b, "| %s | %s |\n", k[0], k[1])
 	}
