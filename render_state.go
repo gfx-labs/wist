@@ -83,6 +83,19 @@ func cells(l line) []string {
 	return out
 }
 
+// gutterCells is how many leading cells of l are decoration (code block,
+// quote, thinking or tool-output gutters) that a copy should leave out.
+func gutterCells(l line) int {
+	if len(l) == 0 {
+		return 0
+	}
+	switch strings.TrimRight(l[0].text, " ") {
+	case "│", "┊", "▎", "  │":
+		return len(cells(line{l[0]}))
+	}
+	return 0
+}
+
 // selectedText returns the text between a and b (cell positions, b
 // exclusive on its line), trailing spaces trimmed per line.
 func selectedText(lines []line, a, b pos) string {
@@ -92,9 +105,10 @@ func selectedText(lines []line, a, b pos) string {
 	var sb strings.Builder
 	for li := max(0, a.line); li <= b.line && li < len(lines); li++ {
 		cs := cells(lines[li])
-		from, to := 0, len(cs)
+		skip := gutterCells(lines[li])
+		from, to := skip, len(cs)
 		if li == a.line {
-			from = min(a.col, len(cs))
+			from = max(skip, min(a.col, len(cs)))
 		}
 		if li == b.line {
 			to = min(b.col+1, len(cs))
