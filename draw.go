@@ -25,6 +25,10 @@ func (u *UI) draw() {
 	y := h - 1
 	u.drawStatus(y, w)
 	y--
+	if !u.opts.noMouse && !rs.dragMouse {
+		rs.dragMouse = true
+		sc.EnableMouse(tcell.MouseDragEvents)
+	}
 
 	inputW := w - 4
 	rows, cy, cx := u.ed.layout(inputW)
@@ -56,9 +60,19 @@ func (u *UI) draw() {
 		y = top - 1
 	}
 
-	// Plan panel on the right when wide enough, otherwise above the input.
+	if rs.search.open {
+		u.drawSearchBar(y, w)
+		y--
+	}
+
+	// Side panel (diagram / tool output) and the plan share the right side
+	// when wide enough; otherwise the plan goes above the input.
 	transcriptW := w
-	if len(u.plan) > 0 && !u.planHidden {
+	if rs.panel.open && w >= 60 {
+		pw := min(max(w*2/5, 40), w-30)
+		transcriptW = w - pw - 1
+		u.drawSidePanel(transcriptW+1, 1, pw, y)
+	} else if len(u.plan) > 0 && !u.planHidden {
 		if w >= 110 {
 			pw := min(44, w/3)
 			transcriptW = w - pw - 1
@@ -109,7 +123,15 @@ func (u *UI) drawHeader(w int) {
 		}
 	}
 	l = append(l, span{title, stBase.Bold(true)})
+	agent := u.opts.agent
+	if agent == "" {
+		agent = "towa"
+	}
+	l = append(l, span{"  " + agent, stDim})
 	right := homeRel(u.opts.cwd)
+	if u.themeName != "" && u.themeName != "dark" {
+		right = u.themeName + "  " + right
+	}
 	if br := gitBranch(u.opts.cwd); br != "" {
 		right += "  " + br
 	}
@@ -156,6 +178,7 @@ func (u *UI) drawTranscript(top, bottom, w int) {
 	}
 	cw := w - 2 // one column margin each side
 	var all []line
+	rs.codes = rs.codes[:0]
 	for i, b := range u.blocks {
 		ls := b.lines(cw, u.expandAll, u.showThinking)
 		if len(ls) == 0 {
@@ -163,6 +186,11 @@ func (u *UI) drawTranscript(top, bottom, w int) {
 		}
 		if i > 0 && spaced(u.blocks[i-1], b) {
 			all = append(all, line{})
+		}
+		for _, c := range b.codes {
+			if b.kind == kindAgent {
+				rs.codes = append(rs.codes, codeEntry{line: len(all) + c.line, ref: c})
+			}
 		}
 		all = append(all, ls...)
 	}
@@ -181,10 +209,13 @@ func (u *UI) drawTranscript(top, bottom, w int) {
 	if len(all) < height {
 		y = bottom - len(all) + 1 // stick to the bottom like a chat
 	}
+	rs.view = viewGeom{top: y, bottom: bottom, x: 1, w: w - 1, start: start, end: end, height: height, total: len(all)}
+	rs.lines = all
 	for _, l := range all[start:end] {
 		drawLine(u.sc, 1, y, w-1, l)
 		y++
 	}
+	u.decorateTranscript()
 	if u.scroll > 0 {
 		msg := fmt.Sprintf(" ↓ %d more lines (esc / pgdn) ", u.scroll)
 		drawStr(u.sc, max(0, w-uniseg.StringWidth(msg)-1), bottom, w, msg, tcell.StyleDefault.Foreground(cText).Background(cSelBg))
@@ -219,6 +250,9 @@ func (u *UI) workingLine() line {
 	} else if b != nil && b.kind == kindAgent {
 		verb = "writing"
 	}
+	if u.urgent {
+		verb = "interrupting"
+	}
 	l := line{{spinner() + " ", stAccent}, {verb + "…", stAccent.Italic(true)}, {" " + fmtDuration(el), stDim}, {"  esc to interrupt", stFaint}}
 	if n := len(u.queue); n > 0 {
 		l = append(l, span{fmt.Sprintf("  %d queued", n), stYellow})
@@ -250,6 +284,8 @@ func (u *UI) drawInput(top, w int, rows []string) {
 	switch {
 	case len(u.perms) > 0:
 		border, label = stYellow, " permission needed "
+	case u.urgent:
+		border, label = stYellow, " interrupting… "
 	case u.busy:
 		border, label = stAccent, " enter queues · esc interrupts "
 	}
@@ -306,6 +342,9 @@ func (u *UI) drawStatus(y, w int) {
 	}
 	if u.cost != nil && u.cost.Amount > 0 {
 		l = append(l, span{fmt.Sprintf("  $%.2f", u.cost.Amount), stDim})
+	}
+	if u.statsSummary != "" {
+		l = append(l, span{"  " + u.statsSummary, stCyan})
 	}
 	if u.turnUsage != nil {
 		l = append(l, span{fmt.Sprintf("  last ↑%s ↓%s", fmtTokens(u.turnUsage.InputTokens), fmtTokens(u.turnUsage.OutputTokens)), stFaint})

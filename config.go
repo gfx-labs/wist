@@ -286,6 +286,7 @@ func applyTheme(preset string, overrides map[string]string) []string {
 	stYellow = tcell.StyleDefault.Foreground(cYellow)
 	stCyan = tcell.StyleDefault.Foreground(cCyan)
 	stCode = tcell.StyleDefault.Foreground(cOrange)
+	refreshStyles()
 	return warn
 }
 

@@ -48,6 +48,7 @@ type block struct {
 	cacheW     int
 	cacheExp   bool
 	cacheLines []line
+	codes      []codeRef // fenced code blocks of an agent message, by rendered line
 }
 
 func (b *block) dirty() { b.cacheW = -1 }
@@ -73,8 +74,11 @@ func (b *block) lines(width int, expandAll bool, showThinking bool) []line {
 			prefix = line{{"⏳ ", stDim}}
 		}
 		out = wrap([]span{{clean(b.text), body}}, width, prefix, line{{"  ", st}})
+		if b.queued {
+			out = append(out, line{{"  will send after this turn", stFaint.Italic(true)}})
+		}
 	case kindAgent:
-		out = markdown(clean(b.text), width, stBase)
+		out, b.codes = markdownDoc(clean(b.text), width, stBase)
 	case kindThought:
 		text := strings.TrimSpace(clean(b.text))
 		if !showThinking && !exp {
@@ -82,7 +86,10 @@ func (b *block) lines(width int, expandAll bool, showThinking bool) []line {
 			out = []line{{{"✻ ", stDim}, {truncate("thinking: "+first, width-2), stDim.Italic(true)}}}
 		} else {
 			bar := line{{"┊ ", stFaint}}
-			out = append([]line{{{"✻ thinking", stDim}}}, wrap([]span{{text, stDim.Italic(true)}}, width, bar, bar)...)
+			out = []line{{{"✻ thinking", stDim}}}
+			for _, l := range markdown(text, width-2, stDim.Italic(true)) {
+				out = append(out, append(append(line{}, bar...), dimLine(l)...))
+			}
 		}
 	case kindTool:
 		out = b.toolLines(width, exp)
@@ -234,7 +241,7 @@ func contentText(c acp.ContentBlock) string {
 		}
 		return "[resource]"
 	case c.Image != nil:
-		return "[image " + c.Image.MimeType + "]"
+		return imagePlaceholder(c.Image.MimeType, c.Image.Data)
 	case c.Audio != nil:
 		return "[audio]"
 	}
