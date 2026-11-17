@@ -33,6 +33,7 @@ func init() {
 			}
 		}},
 		{"newline", "insert a newline", []string{"ctrl+j"}, func(u *UI) { u.ed.insert("\n") }},
+		{"paste_image", "attach an image from the clipboard", []string{"ctrl+v", "alt+v"}, (*UI).pasteImage},
 		{"interrupt", "interrupt the turn, or scroll to the bottom", []string{"esc"}, func(u *UI) {
 			if u.busy {
 				u.cancelTurn()

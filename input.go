@@ -283,6 +283,11 @@ func (u *UI) handleEvent(ev tcell.Event) {
 		u.sc.Sync()
 	case *tcell.EventPaste:
 		u.pasting = ev.Start()
+		if u.pasting {
+			u.pasteBuf.Reset()
+		} else {
+			u.finishPaste()
+		}
 	case *tcell.EventMouse:
 		if u.renderMouse(ev) {
 			return
@@ -302,13 +307,20 @@ func (u *UI) handleKey(ev *tcell.EventKey) {
 	if u.pasting {
 		switch ev.Key() {
 		case tcell.KeyRune:
-			u.ed.insert(string(ev.Rune()))
+			u.pasteBuf.WriteRune(ev.Rune())
 		case tcell.KeyEnter, tcell.KeyCtrlJ:
-			u.ed.insert("\n")
+			u.pasteBuf.WriteByte('\n')
 		case tcell.KeyTab:
-			u.ed.insert("    ")
+			u.pasteBuf.WriteString("    ")
 		}
 		return
+	}
+	if ev.Key() == tcell.KeyBackspace || ev.Key() == tcell.KeyBackspace2 {
+		if len(u.ed.buf) == 0 && len(u.images) > 0 && u.picker == nil {
+			u.images = u.images[:len(u.images)-1]
+			u.notify("removed image")
+			return
+		}
 	}
 	if u.picker != nil {
 		u.pickerKey(ev)
@@ -708,4 +720,20 @@ func homeRel(p string) string {
 		return "~" + strings.TrimPrefix(p, home)
 	}
 	return p
+}
+
+// finishPaste inserts a bracketed paste. A paste that is just the path of
+// an image file, as dragging a file into the terminal gives, attaches the
+// image instead.
+func (u *UI) finishPaste() {
+	text := u.pasteBuf.String()
+	u.pasteBuf.Reset()
+	if p := pastedImagePath(text, u.opts.cwd); p != "" && u.imagesOK {
+		if a, err := imageFile(p); err == nil {
+			u.attach(a)
+			return
+		}
+	}
+	u.ed.insert(text)
+	u.updateCompletion()
 }

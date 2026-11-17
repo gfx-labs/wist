@@ -25,6 +25,7 @@ wist -- --models=codex:pro/gpt-6.2-sol   # anything after -- goes to towa
 - click and drag in the transcript to select text, which is copied on release
 - `alt+/` or `/search` searches the transcript
 - mermaid flowcharts and sequence diagrams drawn as boxes and arrows, with a side panel on `alt+i`
+- images: `ctrl+v` attaches an image from the clipboard (wl-paste or xclip), dragging an image file into the terminal or pasting its path attaches it, and `@shot.png` sends it as an image. Backspace on an empty input removes the last one
 - per-language syntax highlighting, nested lists, reference links
 - sessions: `/fork`, `/rename`, `/archive`, `/delete`, `/back`, and delete/archive/rename keys in the session picker
 - `/btw <question>` forks the session and asks the question in a new tmux pane. `/split` and `/split new` open a fork or a fresh session in a new pane

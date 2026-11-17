@@ -63,10 +63,13 @@ type UI struct {
 	statsSummary string
 
 	// input
-	ed      editor
-	pasting bool
-	comp    *completion
-	files   []string
+	ed       editor
+	pasting  bool
+	pasteBuf strings.Builder // a paste, inserted when it ends
+	images   []attachment    // images sent with the next prompt
+	imagesOK bool            // the agent takes image prompts
+	comp     *completion
+	files    []string
 
 	// overlays
 	picker  *picker
@@ -191,6 +194,7 @@ func (u *UI) connect(ctx context.Context) {
 	}
 	u.post(func(u *UI) {
 		u.canLoad = init.AgentCapabilities.LoadSession
+		u.imagesOK = init.AgentCapabilities.PromptCapabilities.Image
 		if init.AgentInfo != nil {
 			u.agentName = init.AgentInfo.Name + " " + init.AgentInfo.Version
 		}
@@ -413,7 +417,10 @@ func (u *UI) finishTool(b *block) {
 func (u *UI) submit(text string) {
 	text = strings.TrimRight(text, " \n")
 	if strings.TrimSpace(text) == "" {
-		return
+		if len(u.images) == 0 {
+			return
+		}
+		text = "(image)"
 	}
 	u.ed.remember(text)
 	if strings.HasPrefix(text, "/") && u.localCommand(text) {
@@ -428,7 +435,11 @@ func (u *UI) submit(text string) {
 		u.addBlock(&block{kind: kindUser, text: text, queued: true})
 		return
 	}
-	u.addBlock(&block{kind: kindUser, text: text})
+	shown := text
+	for _, a := range u.images {
+		shown += "\n🖼 " + a.label()
+	}
+	u.addBlock(&block{kind: kindUser, text: shown})
 	u.startTurn(text)
 }
 
@@ -449,6 +460,7 @@ func (u *UI) startTurn(text string) {
 // as resource links.
 func (u *UI) promptBlocks(text string) []acp.ContentBlock {
 	blocks := []acp.ContentBlock{{Text: &acp.ContentBlockText{Text: text}}}
+	blocks = append(blocks, u.imageBlocks(text)...)
 	seen := map[string]bool{}
 	for _, f := range strings.Fields(text) {
 		if !strings.HasPrefix(f, "@") || len(f) < 2 {
@@ -461,6 +473,9 @@ func (u *UI) promptBlocks(text string) []acp.ContentBlock {
 		}
 		if seen[abs] {
 			continue
+		}
+		if imageExts[strings.ToLower(filepath.Ext(abs))] {
+			continue // sent as an image block
 		}
 		if st, err := os.Stat(abs); err == nil && !st.IsDir() {
 			seen[abs] = true

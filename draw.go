@@ -289,6 +289,9 @@ func (u *UI) drawInput(top, w int, rows []string) {
 	case u.busy:
 		border, label = stAccent, " enter queues · esc interrupts "
 	}
+	if att := u.attachmentLabels(); att != "" {
+		label += att
+	}
 	sc.SetContent(0, top, '╭', nil, border)
 	for x := 1; x < w-1; x++ {
 		sc.SetContent(x, top, '─', nil, border)
