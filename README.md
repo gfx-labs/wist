@@ -26,6 +26,11 @@ wist -- --models=codex:pro/gpt-6.2-sol   # anything after -- goes to towa
 - `alt+/` or `/search` searches the transcript
 - mermaid flowcharts and sequence diagrams drawn as boxes and arrows, with a side panel on `alt+i`
 - images: `ctrl+v` attaches an image from the clipboard (wl-paste or xclip), dragging an image file into the terminal or pasting its path attaches it, and `@shot.png` sends it as an image. Backspace on an empty input removes the last one
+- images in the side panel: an image placeholder (`🖼 #N …`) opens it on click or `alt+i`, and `[` / `]` cycle. Kitty graphics in kitty, ghostty and WezTerm (unicode placeholders inside tmux, so panes can split), sixel in foot and xterm, colored half blocks elsewhere. `WIST_IMAGES=kitty|sixel|blocks|off` overrides
+- clickable links (OSC 8) for markdown links, URLs and tool file paths, curly underlines on errors
+- away notifications: when the terminal is unfocused, a finished turn or permission request sends a desktop and terminal notification (`notify = auto|off|desktop|terminal`)
+- `ctrl+z` suspends wist (towa keeps running), `alt+x` or `/edit` writes the prompt in `$EDITOR`, `/paste` reads the terminal clipboard over OSC 52
+- ASCII fallbacks for glyphs the terminal cannot show, and a 256-color palette without truecolor
 - per-language syntax highlighting, nested lists, reference links
 - sessions: `/fork`, `/rename`, `/archive`, `/delete`, `/back`, and delete/archive/rename keys in the session picker
 - `/btw <question>` forks the session and asks the question in a new tmux pane. `/split` and `/split new` open a fork or a fresh session in a new pane
