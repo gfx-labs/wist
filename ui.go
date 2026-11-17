@@ -80,7 +80,7 @@ func newUI(o options) (*UI, error) {
 		sc.EnableMouse(tcell.MouseButtonEvents)
 	}
 	sc.SetCursorStyle(tcell.CursorStyleSteadyBar)
-	sc.SetTitle("towa")
+	sc.SetTitle("wist")
 	return &UI{
 		opts:  o,
 		sc:    sc,
@@ -147,10 +147,10 @@ func (u *UI) notify(msg string) {
 
 func (u *UI) connect(ctx context.Context) {
 	u.ctx = ctx
-	title := "towa-tui"
+	title := "wist"
 	init, err := u.conn.Initialize(ctx, acp.InitializeRequest{
 		ProtocolVersion: acp.ProtocolVersionNumber,
-		ClientInfo:      &acp.Implementation{Name: "towa-tui", Title: &title, Version: "0.1.0"},
+		ClientInfo:      &acp.Implementation{Name: "wist", Title: &title, Version: "0.1.0"},
 		ClientCapabilities: acp.ClientCapabilities{
 			Plan: &acp.PlanCapabilities{},
 			Session: &acp.ClientSessionCapabilities{
@@ -227,7 +227,7 @@ func (u *UI) resetSession(id acp.SessionId) {
 	u.title = ""
 	u.ctxUsed, u.ctxSize, u.cost, u.turnUsage = 0, 0, nil, nil
 	u.scroll = 0
-	u.sc.SetTitle("towa")
+	u.sc.SetTitle("wist")
 }
 
 // --- transcript ---------------------------------------------------------
@@ -338,7 +338,7 @@ func (u *UI) applyUpdate(n acp.SessionNotification) {
 	case up.SessionInfoUpdate != nil:
 		if t := up.SessionInfoUpdate.Title; t != nil {
 			u.title = *t
-			u.sc.SetTitle("towa · " + *t)
+			u.sc.SetTitle("wist · " + *t)
 		}
 	case up.UsageUpdate != nil:
 		u.ctxUsed, u.ctxSize, u.cost = up.UsageUpdate.Used, up.UsageUpdate.Size, up.UsageUpdate.Cost

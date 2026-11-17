@@ -1,4 +1,4 @@
-module github.com/abs3ntdev/towa-tui
+module github.com/abs3ntdev/wist
 
 go 1.27.3
 

@@ -1,15 +1,15 @@
-# towa-tui
+# wist
 
-A terminal UI for [towa](https://github.com/gfx-labs/towa), built with [tcell](https://github.com/gdamore/tcell). The design takes a lot from [jcode](https://github.com/1jehuang/jcode).
+wist is a terminal UI for [towa](https://github.com/gfx-labs/towa), built with [tcell](https://github.com/gdamore/tcell). The design takes a lot from [jcode](https://github.com/1jehuang/jcode).
 
-towa-tui starts `towa` as a child process and talks the Agent Client Protocol to it over stdio, using [go-acp](https://github.com/gfx-labs/go-acp). towa's stderr goes to `$XDG_STATE_HOME/towa-tui/towa.log`.
+wist starts `towa` as a child process and talks the Agent Client Protocol to it over stdio, using [go-acp](https://github.com/gfx-labs/go-acp). towa's stderr goes to `$XDG_STATE_HOME/wist/towa.log`.
 
 ```sh
-go install github.com/abs3ntdev/towa-tui@latest
-towa-tui                                  # new session in the current directory
-towa-tui --resume <session-id>            # load a stored session
-towa-tui -p "fix the failing test"        # send a first prompt right away
-towa-tui -- --models=codex:pro/gpt-6.2-sol   # anything after -- goes to towa
+go install github.com/abs3ntdev/wist@latest
+wist                                  # new session in the current directory
+wist --resume <session-id>            # load a stored session
+wist -p "fix the failing test"        # send a first prompt right away
+wist -- --models=codex:pro/gpt-6.2-sol   # anything after -- goes to towa
 ```
 
 ## features

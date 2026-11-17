@@ -100,7 +100,7 @@ func withBg(l line, bg tcell.Color) line {
 
 func (u *UI) drawHeader(w int) {
 	sc := u.sc
-	l := line{{" towa ", tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(cAccent).Bold(true)}, {" ", stBase}}
+	l := line{{" wist ", tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(cAccent).Bold(true)}, {" ", stBase}}
 	title := u.title
 	if title == "" {
 		title = "new session"
@@ -228,9 +228,9 @@ func (u *UI) workingLine() line {
 
 func welcome(w int) []line {
 	logo := []string{
-		"  ┌┬┐┌─┐┬ ┬┌─┐",
-		"   │ │ ││││├─┤",
-		"   ┴ └─┘└┴┘┴ ┴",
+		"  ┬ ┬┬┌─┐┌┬┐",
+		"  │││││└─┐ │ ",
+		"  └┴┘┴└─┘ ┴ ",
 	}
 	var out []line
 	for _, s := range logo {

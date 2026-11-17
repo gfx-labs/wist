@@ -1,4 +1,4 @@
-// Command towa-tui is an interactive terminal client for towa. It starts
+// Command wist is an interactive terminal client for towa. It starts
 // towa as a child process and speaks the Agent Client Protocol to it over
 // the child's standard input and output.
 package main
@@ -36,11 +36,11 @@ func parseFlags() options {
 	flag.StringVar(&extra, "towa-args", "", "extra arguments for towa, split on spaces (e.g. \"--models=claude:max/claude-opus-5-5\")")
 	flag.StringVar(&o.cwd, "cwd", "", "working directory of the session (default: current directory)")
 	flag.StringVar(&o.resume, "resume", "", "load the session with this id instead of starting a new one")
-	flag.StringVar(&o.log, "log", "", "file that receives towa's stderr (default: $XDG_STATE_HOME/towa-tui/towa.log)")
+	flag.StringVar(&o.log, "log", "", "file that receives towa's stderr (default: $XDG_STATE_HOME/wist/towa.log)")
 	flag.StringVar(&o.prompt, "p", "", "send this prompt as soon as the session is ready")
 	flag.BoolVar(&o.noMouse, "no-mouse", false, "do not capture the mouse (keeps the terminal's own selection)")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: towa-tui [flags] [-- towa args...]\n\n")
+		fmt.Fprintf(os.Stderr, "usage: wist [flags] [-- towa args...]\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -60,7 +60,7 @@ func parseFlags() options {
 			home, _ := os.UserHomeDir()
 			dir = filepath.Join(home, ".local", "state")
 		}
-		o.log = filepath.Join(dir, "towa-tui", "towa.log")
+		o.log = filepath.Join(dir, "wist", "towa.log")
 	}
 	return o
 }
@@ -68,7 +68,7 @@ func parseFlags() options {
 func main() {
 	o := parseFlags()
 	if err := run(o); err != nil {
-		fmt.Fprintln(os.Stderr, "towa-tui:", err)
+		fmt.Fprintln(os.Stderr, "wist:", err)
 		os.Exit(1)
 	}
 }
@@ -82,7 +82,7 @@ func run(o options) error {
 		return err
 	}
 	defer logFile.Close()
-	fmt.Fprintf(logFile, "\n--- towa-tui %s: %s %s\n", time.Now().Format(time.RFC3339), o.towa, strings.Join(o.args, " "))
+	fmt.Fprintf(logFile, "\n--- wist %s: %s %s\n", time.Now().Format(time.RFC3339), o.towa, strings.Join(o.args, " "))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -134,7 +134,7 @@ func run(o options) error {
 		_ = cmd.Process.Kill()
 	}
 	if ui.lastSession != "" {
-		fmt.Printf("session %s\nresume with: towa-tui --resume %s\n", ui.lastSession, ui.lastSession)
+		fmt.Printf("session %s\nresume with: wist --resume %s\n", ui.lastSession, ui.lastSession)
 	}
 	return runErr
 }
