@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -11,67 +10,13 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/gfx-labs/wist/pkg/notify"
 )
 
 // Terminal integration: focus tracking and away notifications, job control
 // suspend, composing in $EDITOR and OSC 52 clipboard reads.
 
 // --- notifications -------------------------------------------------------
-
-// notifyMode is the config value notify = "auto"|"off"|"desktop"|"terminal".
-func validNotifyMode(s string) bool {
-	switch s {
-	case "auto", "off", "desktop", "terminal":
-		return true
-	}
-	return false
-}
-
-// desktopNotifyCmd returns the argv that shows a desktop notification on
-// goos, or nil when no tool is available. look stands in for exec.LookPath.
-func desktopNotifyCmd(goos, title, body string, look func(string) (string, error)) []string {
-	switch goos {
-	case "darwin":
-		if _, err := look("osascript"); err == nil {
-			return []string{"osascript", "-e", fmt.Sprintf("display notification %s with title %s", appleQuote(body), appleQuote(title))}
-		}
-	default:
-		if _, err := look("notify-send"); err == nil {
-			return []string{"notify-send", "--app-name=wist", title, body}
-		}
-	}
-	return nil
-}
-
-func appleQuote(s string) string {
-	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
-}
-
-// oscNotify builds the OSC 9 and OSC 777 notification escapes, each
-// wrapped for tmux passthrough when inTmux.
-func oscNotify(title, body string, inTmux bool) string {
-	clean := func(s string) string {
-		return strings.Map(func(r rune) rune {
-			if r < 0x20 || r == 0x7f {
-				return ' '
-			}
-			return r
-		}, s)
-	}
-	title, body = clean(title), clean(body)
-	seqs := []string{
-		"\x1b]9;" + title + ": " + body + "\x1b\\",
-		"\x1b]777;notify;" + strings.ReplaceAll(title, ";", ",") + ";" + body + "\x1b\\",
-	}
-	var b strings.Builder
-	for _, s := range seqs {
-		if inTmux {
-			s = "\x1bPtmux;" + strings.ReplaceAll(s, "\x1b", "\x1b\x1b") + "\x1b\\"
-		}
-		b.WriteString(s)
-	}
-	return b.String()
-}
 
 // alert notifies the user when the terminal is not focused.
 func (u *UI) alert(body string) {
@@ -91,11 +36,11 @@ func (u *UI) alert(body string) {
 	}
 	if mode == "auto" || mode == "terminal" {
 		if tty, ok := u.sc.Tty(); ok {
-			_, _ = tty.Write([]byte(oscNotify(title, body, os.Getenv("TMUX") != "")))
+			_, _ = tty.Write([]byte(notify.OSC(title, body, os.Getenv("TMUX") != "")))
 		}
 	}
 	if mode == "auto" || mode == "desktop" {
-		if argv := desktopNotifyCmd(runtime.GOOS, title, body, exec.LookPath); argv != nil {
+		if argv := notify.DesktopCmd(runtime.GOOS, title, body, exec.LookPath); argv != nil {
 			go func() { _ = exec.Command(argv[0], argv[1:]...).Run() }()
 		}
 	}

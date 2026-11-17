@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/gfx-labs/wist/pkg/notify"
 )
 
 // Config is ~/.config/wist/config.toml. Only a small TOML subset is
@@ -109,7 +110,7 @@ func parseConfig(sc *bufio.Scanner) (Config, error) {
 			case "theme":
 				c.Theme = one
 			case "notify":
-				if validNotifyMode(one) {
+				if notify.ValidMode(one) {
 					c.Notify = one
 				} else {
 					c.Warnings = append(c.Warnings, fmt.Sprintf("config line %d: notify must be auto, off, desktop or terminal", n))
