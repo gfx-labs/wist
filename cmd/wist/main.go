@@ -32,7 +32,7 @@ func parseFlags(cfg config.Config) tui.Options {
 	flag.StringVar(&o.Prompt, "p", "", "send this prompt as soon as the session is ready")
 	flag.BoolVar(&o.NoMouse, "no-mouse", false, "do not capture the mouse (keeps the terminal's own selection)")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: wist [flags] [-- agent args...]\n       wist agents    list agents in the ACP registry\n\nconfig: %s\n\n", config.Path())
+		fmt.Fprintf(os.Stderr, "usage: wist [flags] [-- agent args...]\n       wist ask [flags] [--] <prompt...>    run one prompt and exit (see wist ask -h)\n       wist agents    list agents in the ACP registry\n\nconfig: %s\n\n", config.Path())
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -66,6 +66,9 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "ask" {
+		os.Exit(runAsk(os.Args[2:], config.Load()))
 	}
 	cfg := config.Load()
 	o := parseFlags(cfg)
