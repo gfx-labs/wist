@@ -77,7 +77,21 @@ Permissions: when the agent asks (for example in `--ask` mode) and both stdin an
 - sessions: `/fork`, `/rename`, `/archive`, `/delete`, `/back`, and delete/archive/rename keys in the session picker
 - `/btw <question>` forks the session and asks the question in a new tmux pane. `/split` and `/split new` open a fork or a fresh session in a new pane
 - `/stats` and the status bar show files and lines changed this session
-- `~/.config/wist/config.toml`: theme presets (dark, light, catppuccin-mocha, gruvbox, tokyonight, terminal, xresources; also `wist --theme NAME`), colors, remappable keys with conflict warnings, `spawn_hook`. `/theme`, `/keys`
+- `~/.config/wist/config.yaml` (or `config.yml`; `config.toml` is no longer read): theme presets (dark, light, catppuccin-mocha, gruvbox, tokyonight, terminal, xresources; also `wist --theme NAME`), colors, remappable keys with conflict warnings, `spawn_hook`. `/theme`, `/keys`
+
+  ```yaml
+  towa_args: ["--models=claude:max/claude-opus-5-5"]
+  agent: towa
+  spawn_hook: "tmux split-window -h {cmd}"
+  notify: auto
+  theme:
+    preset: xresources
+    accent: "#7aa2f7"
+  keys:
+    model_picker: ctrl+g
+    theme_picker: [f2, alt+t]
+  ```
+
   - `terminal`: only ANSI colors 0-15 and the terminal's default fg/bg, so it follows your terminal palette.
   - `xresources`: reads `xrdb -query` (500ms timeout), else parses `~/.Xresources` then `~/.Xdefaults` directly (works on Wayland; handles `!` comments, `#define`, `#include "file"`; `URxvt*color4` beats `*color4`). `WIST_XRESOURCES=path` overrides. Mapping: accent=color4, green=color2, red=color1, yellow=color3, user=color5, cyan=color6, dim=color8, text=foreground, code/panel/selection/diff backgrounds blended from background; missing keys fall back to `dark`.
 - other ACP agents from the [ACP registry](https://github.com/agentclientprotocol/registry): `wist agents`, `wist --agent <id>`, `/agents`

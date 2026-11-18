@@ -7,6 +7,7 @@ require (
 	github.com/gfx-labs/go-acp v0.1.1
 	github.com/rivo/uniseg v0.4.7
 	github.com/urfave/cli/v3 v3.14.0
+	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/image v0.48.0
 	golang.org/x/term v0.37.0
 )

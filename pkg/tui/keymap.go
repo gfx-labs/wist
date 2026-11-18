@@ -279,7 +279,7 @@ func (u *UI) keysText() string {
 		fmt.Fprintf(&b, "| %s | %s | %s |\n", a.name, keys, a.desc)
 	}
 	b.WriteString("\nEditor keys (ctrl+a/e/b/f/w/u/k/y, alt+b/f/d, arrows) apply when a key is not bound above.\n")
-	fmt.Fprintf(&b, "Rebind in `%s` under `[keys]`, e.g. `model_picker = \"ctrl+g\"`.\n", homeRel(config.Path()))
+	fmt.Fprintf(&b, "Rebind in `%s` under `keys:`, e.g. `model_picker: ctrl+g`.\n", homeRel(config.Path()))
 	if len(u.keymap.warnings) > 0 {
 		b.WriteString("\n## warnings\n\n")
 		for _, w := range u.keymap.warnings {
