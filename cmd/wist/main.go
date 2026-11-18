@@ -4,46 +4,75 @@
 package main
 
 import (
-	"flag"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/gfx-labs/wist/pkg/agent"
+	"github.com/gfx-labs/wist/pkg/ask"
 	"github.com/gfx-labs/wist/pkg/config"
 	"github.com/gfx-labs/wist/pkg/registry"
 	"github.com/gfx-labs/wist/pkg/tui"
+	"github.com/urfave/cli/v3"
 )
 
-func parseFlags(cfg config.Config) tui.Options {
+// usageError marks a command line mistake (exit status 2).
+func usageError(_ context.Context, cmd *cli.Command, err error, _ bool) error {
+	fmt.Fprintf(os.Stderr, "%s: %v\n\n", cmd.FullName(), err)
+	_ = cli.ShowSubcommandHelp(cmd)
+	return cli.Exit("", ask.ExitUsage)
+}
+
+func rootCommand(cfg config.Config) *cli.Command {
 	var o tui.Options
 	var extra string
 	defTowa := cfg.Towa
 	if defTowa == "" {
 		defTowa = "towa"
 	}
-	flag.StringVar(&o.Towa, "towa", defTowa, "path of the towa binary")
-	flag.StringVar(&o.Agent, "agent", cfg.Agent, "run this ACP registry agent instead of towa (see `wist agents`)")
-	flag.StringVar(&extra, "towa-args", "", "extra arguments for towa, split on spaces (e.g. \"--models=claude:max/claude-opus-5-5\")")
-	flag.StringVar(&o.Cwd, "cwd", "", "working directory of the session (default: current directory)")
-	flag.StringVar(&o.Resume, "resume", "", "load the session with this id instead of starting a new one")
-	flag.StringVar(&o.Log, "log", "", "file that receives towa's stderr (default: $XDG_STATE_HOME/wist/towa.log)")
-	flag.StringVar(&o.Prompt, "p", "", "send this prompt as soon as the session is ready")
-	flag.BoolVar(&o.NoMouse, "no-mouse", false, "do not capture the mouse (keeps the terminal's own selection)")
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: wist [flags] [-- agent args...]\n       wist ask [flags] [--] <prompt...>    run one prompt and exit (see wist ask -h)\n       wist agents    list agents in the ACP registry\n\nconfig: %s\n\n", config.Path())
-		flag.PrintDefaults()
+	return &cli.Command{
+		Name:            "wist",
+		Usage:           "interactive terminal client for ACP agents (towa by default)",
+		UsageText:       "wist [flags] [-- agent args...]\nwist ask [flags] [--] <prompt...>\nwist agents",
+		Description:     "config: " + config.Path(),
+		HideHelpCommand: true,
+		// main reports errors and picks the exit status.
+		ExitErrHandler: func(context.Context, *cli.Command, error) {},
+		OnUsageError:   usageError,
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "towa", Local: true, Value: defTowa, Destination: &o.Towa, Usage: "path of the towa binary"},
+			&cli.StringFlag{Name: "agent", Local: true, Value: cfg.Agent, Destination: &o.Agent, Usage: "run this ACP registry agent instead of towa (see: wist agents)"},
+			&cli.StringFlag{Name: "towa-args", Local: true, Destination: &extra, Usage: "extra arguments for towa, split on spaces (e.g. \"--models=claude:max/claude-opus-5-5\")"},
+			&cli.StringFlag{Name: "cwd", Local: true, Destination: &o.Cwd, Usage: "working directory of the session (default: current directory)"},
+			&cli.StringFlag{Name: "resume", Local: true, Destination: &o.Resume, Usage: "load the session with this id instead of starting a new one"},
+			&cli.StringFlag{Name: "log", Local: true, Destination: &o.Log, Usage: "file that receives towa's stderr (default: $XDG_STATE_HOME/wist/towa.log)"},
+			&cli.StringFlag{Name: "p", Local: true, Destination: &o.Prompt, Usage: "send this prompt as soon as the session is ready"},
+			&cli.BoolFlag{Name: "no-mouse", Local: true, Destination: &o.NoMouse, Usage: "do not capture the mouse (keeps the terminal's own selection)"},
+		},
+		Commands: []*cli.Command{askCommand(cfg), agentsCommand()},
+		Action: func(_ context.Context, cmd *cli.Command) error {
+			finishOptions(&o, extra, cmd.Args().Slice(), cfg)
+			if err := tui.Run(o, cfg); err != nil {
+				return cli.Exit("wist: "+err.Error(), 1)
+			}
+			return nil
+		},
 	}
-	flag.Parse()
+}
+
+// finishOptions resolves agent args and defaults exactly as the original
+// flag based parser did.
+func finishOptions(o *tui.Options, extra string, rest []string, cfg config.Config) {
 	if o.Agent == "towa" {
 		o.Agent = ""
 	}
 	if extra != "" {
 		o.PassArgs = append(o.PassArgs, strings.Fields(extra)...)
 	}
-	o.PassArgs = append(o.PassArgs, flag.Args()...)
-	if o.Agent == "" && extra == "" && flag.NArg() == 0 {
+	o.PassArgs = append(o.PassArgs, rest...)
+	if o.Agent == "" && extra == "" && len(rest) == 0 {
 		o.Args = append(o.Args, cfg.TowaArgs...)
 	}
 	o.Args = append(o.Args, o.PassArgs...)
@@ -56,24 +85,32 @@ func parseFlags(cfg config.Config) tui.Options {
 	if o.Log == "" {
 		o.Log = agent.DefaultLog(o.Agent)
 	}
-	return o
+}
+
+func agentsCommand() *cli.Command {
+	return &cli.Command{
+		Name:  "agents",
+		Usage: "list agents in the ACP registry",
+		Action: func(context.Context, *cli.Command) error {
+			if err := registry.List(os.Stdout); err != nil {
+				return cli.Exit("wist: "+err.Error(), 1)
+			}
+			return nil
+		},
+	}
 }
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "agents" {
-		if err := registry.List(os.Stdout); err != nil {
-			fmt.Fprintln(os.Stderr, "wist:", err)
-			os.Exit(1)
-		}
-		return
-	}
-	if len(os.Args) > 1 && os.Args[1] == "ask" {
-		os.Exit(runAsk(os.Args[2:], config.Load()))
-	}
 	cfg := config.Load()
-	o := parseFlags(cfg)
-	if err := tui.Run(o, cfg); err != nil {
+	if err := rootCommand(cfg).Run(context.Background(), os.Args); err != nil {
+		if ec, ok := err.(cli.ExitCoder); ok {
+			if msg := err.Error(); msg != "" {
+				fmt.Fprintln(os.Stderr, msg)
+			}
+			os.Exit(ec.ExitCode())
+		}
+		// Flag errors surfaced outside OnUsageError.
 		fmt.Fprintln(os.Stderr, "wist:", err)
-		os.Exit(1)
+		os.Exit(ask.ExitUsage)
 	}
 }

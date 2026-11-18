@@ -34,52 +34,45 @@ func TestBuildPrompt(t *testing.T) {
 	}
 }
 
-func parse(t *testing.T, args []string, stdin string, piped bool) (Options, error) {
+func prep(t *testing.T, f Flags, stdin string, piped bool) (Options, error) {
 	t.Helper()
-	return ParseFlags(args, config.Config{}, strings.NewReader(stdin), piped, io.Discard)
+	return Prepare(f, config.Config{}, strings.NewReader(stdin), piped)
 }
 
-func TestParseFlagsPrompt(t *testing.T) {
-	o, err := parse(t, []string{"--json", "--", "--not-a-flag", "text"}, "", false)
-	if err != nil || o.Prompt != "--not-a-flag text" || !o.JSON {
-		t.Fatalf("-- handling: %+v %v", o, err)
-	}
-	o, err = parse(t, []string{"review"}, "diff here", true)
+func TestPreparePrompt(t *testing.T) {
+	o, err := prep(t, Flags{Args: []string{"review"}}, "diff here", true)
 	if err != nil || o.Prompt != "review\n\ndiff here" {
 		t.Fatalf("args+stdin: %q %v", o.Prompt, err)
 	}
 	// stdin is a terminal: with args it is not read.
-	o, err = parse(t, []string{"hi"}, "ignored", false)
+	o, err = prep(t, Flags{Args: []string{"hi"}}, "ignored", false)
 	if err != nil || o.Prompt != "hi" {
 		t.Fatalf("tty stdin: %q %v", o.Prompt, err)
 	}
-	o, err = parse(t, nil, "only stdin", false)
-	if err != nil || o.Prompt != "only stdin" {
-		t.Fatalf("no args reads stdin: %q %v", o.Prompt, err)
+	o, err = prep(t, Flags{}, "only stdin", false)
+	if err != nil || o.Prompt != "only stdin" || o.Bin != "towa" {
+		t.Fatalf("no args reads stdin: %+v %v", o, err)
 	}
 }
 
-func TestParseFlagsUsageErrors(t *testing.T) {
-	bad := [][]string{
-		{"--bogus", "x"},
-		{"--no-save", "--resume", "last", "x"},
-		{"--ask", "--auto", "x"},
-		{"--ask", "--mode", "auto", "x"},
+func TestPrepareUsageErrors(t *testing.T) {
+	x := []string{"x"}
+	bad := []Flags{
+		{Options: Options{NoSave: true, Resume: "last"}, Args: x},
+		{Ask: true, Auto: true, Args: x},
+		{Ask: true, Options: Options{Mode: "auto"}, Args: x},
 		{},
-		{"--timeout", "-1s", "x"},
+		{Options: Options{Timeout: -1}, Args: x},
 	}
-	for _, args := range bad {
-		_, err := parse(t, args, "", false)
+	for _, f := range bad {
+		_, err := prep(t, f, "", false)
 		var ue *UsageError
-		if !errors.As(err, &ue) {
-			t.Errorf("%v: err = %v, want UsageError", args, err)
-		}
-		if ExitCode("", err) != ExitUsage {
-			t.Errorf("%v: exit %d, want 2", args, ExitCode("", err))
+		if !errors.As(err, &ue) || ExitCode("", err) != ExitUsage {
+			t.Errorf("%+v: err = %v, want UsageError/exit 2", f, err)
 		}
 	}
-	o, err := parse(t, []string{"--auto", "--image", "a.png", "--image", "b.png", "x"}, "", false)
-	if err != nil || o.Mode != "auto" || len(o.Images) != 2 {
+	o, err := prep(t, Flags{Auto: true, TowaArgs: "--a --b", Args: x}, "", false)
+	if err != nil || o.Mode != "auto" || len(o.Args) != 2 {
 		t.Fatalf("good flags: %+v %v", o, err)
 	}
 }
