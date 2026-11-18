@@ -25,6 +25,7 @@ type Options struct {
 	Cwd      string   // session working directory
 	Resume   string   // session id to load instead of starting a new one
 	Log      string   // file that receives the agent's stderr
+	Socket   string   // towa daemon socket; empty runs towa as a child
 	Prompt   string   // prompt sent as soon as the session is ready
 	NoMouse  bool     // leave the mouse to the terminal
 	Theme    string   // theme preset overriding the config
@@ -119,7 +120,7 @@ type agentConn struct {
 // startAgent spawns the agent and serves ACP on its stdio. The connection
 // stops when cancel is called or ctx ends.
 func startAgent(ctx context.Context, o Options, ui *UI) (*agentConn, error) {
-	proc, err := agent.Spawn(ctx, agent.Options{Bin: o.Towa, Args: o.Args, Env: o.Env, Cwd: o.Cwd, Log: o.Log})
+	proc, err := agent.Start(ctx, agent.Options{Bin: o.Towa, Agent: o.Agent, Args: o.Args, Env: o.Env, Cwd: o.Cwd, Log: o.Log, Socket: o.Socket})
 	if err != nil {
 		return nil, err
 	}

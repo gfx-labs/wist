@@ -45,6 +45,7 @@ func rootCommand(cfg config.Config) *cli.Command {
 			&cli.StringFlag{Name: "towa", Local: true, Value: defTowa, Destination: &o.Towa, Usage: "path of the towa binary"},
 			&cli.StringFlag{Name: "agent", Local: true, Value: cfg.Agent, Destination: &o.Agent, Usage: "run this ACP registry agent instead of towa (see: wist agents)"},
 			&cli.StringFlag{Name: "towa-args", Local: true, Destination: &extra, Usage: "extra arguments for towa, split on spaces (e.g. \"--models=claude:max/claude-opus-5-5\")"},
+			&cli.StringFlag{Name: "socket", Local: true, Value: cfg.TowaSocket, Destination: &o.Socket, Usage: "connect to the towa daemon on this unix socket, starting towa serve on it when none listens"},
 			&cli.StringFlag{Name: "cwd", Local: true, Destination: &o.Cwd, Usage: "working directory of the session (default: current directory)"},
 			&cli.StringFlag{Name: "resume", Local: true, Destination: &o.Resume, Usage: "load the session with this id instead of starting a new one"},
 			&cli.StringFlag{Name: "log", Local: true, Destination: &o.Log, Usage: "file that receives towa's stderr (default: $XDG_STATE_HOME/wist/towa.log)"},

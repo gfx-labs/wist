@@ -15,6 +15,7 @@ import (
 //
 //	towa: towa
 //	towa_args: ["--models=claude:max/claude-opus-5-5"]
+//	towa_socket: /run/user/1000/towa.sock  # connect to a towa daemon, starting it when absent
 //	agent: towa              # or a registry id such as gemini
 //	spawn_hook: "tmux split-window -h {cmd}"
 //	theme:
@@ -24,15 +25,16 @@ import (
 //	  model_picker: ctrl+g
 //	  theme_picker: [f2, alt+t]
 type Config struct {
-	Towa      string              // path of the towa binary
-	TowaArgs  []string            // default towa arguments
-	Agent     string              // default registry agent id
-	SpawnHook string              // shell command that opens {cmd} in a new pane
-	Theme     string              // theme preset name
-	Notify    string              // auto, off, desktop or terminal
-	Colors    map[string]string   // theme color overrides
-	Keys      map[string][]string // key bindings by action name
-	Warnings  []string            // problems found while loading
+	Towa       string              // path of the towa binary
+	TowaArgs   []string            // default towa arguments
+	TowaSocket string              // towa daemon socket to connect to, started when absent
+	Agent      string              // default registry agent id
+	SpawnHook  string              // shell command that opens {cmd} in a new pane
+	Theme      string              // theme preset name
+	Notify     string              // auto, off, desktop or terminal
+	Colors     map[string]string   // theme color overrides
+	Keys       map[string][]string // key bindings by action name
+	Warnings   []string            // problems found while loading
 }
 
 func dir() string {
@@ -146,6 +148,8 @@ func parse(b []byte) (Config, error) {
 			c.Towa = one
 		case "towa_args":
 			c.TowaArgs = vals
+		case "towa_socket":
+			c.TowaSocket = one
 		case "agent":
 			c.Agent = one
 		case "spawn_hook":

@@ -26,6 +26,7 @@ type Options struct {
 	Args   []string // agent arguments
 	Cwd    string   // session working directory
 	Log    string   // file that receives the agent's stderr
+	Socket string   // towa daemon socket; empty runs towa as a child
 	Prompt string   // prompt text
 	Images []string // image files to attach
 	Resume string   // session id, or "last"
@@ -158,7 +159,7 @@ func (r *runner) run(ctx context.Context) (res Result, err error) {
 		images = append(images, im)
 	}
 
-	ao := agent.Options{Bin: r.o.Bin, Agent: r.o.Agent, Args: r.o.Args, Cwd: r.o.Cwd, Log: r.o.Log}
+	ao := agent.Options{Bin: r.o.Bin, Agent: r.o.Agent, Args: r.o.Args, Cwd: r.o.Cwd, Log: r.o.Log, Socket: r.o.Socket}
 	if err := agent.Resolve(&ao, func(s string) { r.out.line(dim, s) }); err != nil {
 		return res, err
 	}
@@ -166,7 +167,7 @@ func (r *runner) run(ctx context.Context) (res Result, err error) {
 	// session/cancel and wait for the turn to end.
 	connCtx, stopConn := context.WithCancel(context.Background())
 	defer stopConn()
-	proc, err := agent.Spawn(connCtx, ao)
+	proc, err := agent.Start(connCtx, ao)
 	if err != nil {
 		return res, err
 	}

@@ -208,6 +208,9 @@ func (u *UI) childArgs(extra ...string) []string {
 	} else if o.Towa != "" && o.Towa != "towa" {
 		args = append(args, "--towa", o.Towa)
 	}
+	if o.Agent == "" && o.Socket != "" {
+		args = append(args, "--socket", o.Socket)
+	}
 	if o.NoMouse {
 		args = append(args, "--no-mouse")
 	}
