@@ -3,6 +3,7 @@ package termimg
 import (
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 )
 
@@ -36,11 +37,18 @@ func Detect() (Protocol, bool) {
 		return Sixel, tmux
 	}
 	term, prog := os.Getenv("TERM"), strings.ToLower(os.Getenv("TERM_PROGRAM"))
+	var features string
 	if tmux {
 		// TERM and TERM_PROGRAM name tmux here: ask it for the outer terminal.
-		out, _ := exec.Command("tmux", "display", "-p", "#{client_termname}\t#{client_termtype}").Output()
-		name, typ, _ := strings.Cut(strings.TrimSpace(string(out)), "\t")
-		term, prog = name, strings.ToLower(strings.Fields(typ + " ")[0])
+		out, err := exec.Command("tmux", "display", "-p", "#{client_termname}\t#{client_termtype}\t#{client_termfeatures}").Output()
+		if err == nil {
+			name, rest, _ := strings.Cut(strings.TrimRight(string(out), "\r\n"), "\t")
+			typ, caps, _ := strings.Cut(rest, "\t")
+			term, prog, features = name, "", caps
+			if fields := strings.Fields(typ); len(fields) > 0 {
+				prog = strings.ToLower(fields[0])
+			}
+		}
 	}
 	switch {
 	case strings.Contains(term, "kitty"), strings.Contains(term, "ghostty"),
@@ -48,7 +56,8 @@ func Detect() (Protocol, bool) {
 		os.Getenv("KITTY_WINDOW_ID") != "", os.Getenv("GHOSTTY_RESOURCES_DIR") != "",
 		os.Getenv("WEZTERM_EXECUTABLE") != "":
 		return Kitty, tmux
-	case strings.HasPrefix(term, "foot"), strings.Contains(term, "mlterm"), strings.Contains(term, "contour"),
+	case slices.Contains(strings.Split(features, ","), "sixel"),
+		strings.HasPrefix(term, "foot"), strings.Contains(term, "mlterm"), strings.Contains(term, "contour"),
 		os.Getenv("XTERM_VERSION") != "":
 		return Sixel, tmux
 	}
