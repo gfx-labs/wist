@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/gfx-labs/wist/pkg/agent"
 	"github.com/gfx-labs/wist/pkg/config"
 	"github.com/gfx-labs/wist/pkg/registry"
 	"github.com/gfx-labs/wist/pkg/tui"
@@ -53,16 +54,7 @@ func parseFlags(cfg config.Config) tui.Options {
 		o.Cwd = abs
 	}
 	if o.Log == "" {
-		dir := os.Getenv("XDG_STATE_HOME")
-		if dir == "" {
-			home, _ := os.UserHomeDir()
-			dir = filepath.Join(home, ".local", "state")
-		}
-		name := "towa.log"
-		if o.Agent != "" {
-			name = o.Agent + ".log"
-		}
-		o.Log = filepath.Join(dir, "wist", name)
+		o.Log = agent.DefaultLog(o.Agent)
 	}
 	return o
 }

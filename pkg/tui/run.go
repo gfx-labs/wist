@@ -8,15 +8,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
-	"syscall"
 	"time"
 
 	acp "github.com/gfx-labs/go-acp"
+	"github.com/gfx-labs/wist/pkg/agent"
 	"github.com/gfx-labs/wist/pkg/config"
-	"github.com/gfx-labs/wist/pkg/registry"
 )
 
 // Options holds the command line settings for one wist session.
@@ -37,57 +33,27 @@ type Options struct {
 // the terminal UI until the user quits. When o.Agent names a registry
 // agent it is resolved (and downloaded if needed) first.
 func Run(o Options, cfg config.Config) error {
-	if o.Agent != "" {
-		c, err := registry.Resolve(o.Agent, func(s string) { fmt.Fprintln(os.Stderr, "wist:", s) })
-		if err != nil {
-			return err
-		}
-		o.Towa = c.Path
-		o.Args = append(append([]string{}, c.Args...), o.Args...)
-		o.Env = c.Env
+	ao := agent.Options{Bin: o.Towa, Agent: o.Agent, Args: o.Args}
+	if err := agent.Resolve(&ao, func(s string) { fmt.Fprintln(os.Stderr, "wist:", s) }); err != nil {
+		return err
 	}
+	o.Towa, o.Args, o.Env = ao.Bin, ao.Args, ao.Env
 	return run(o, cfg)
 }
 
 func run(o Options, cfg config.Config) error {
-	if err := os.MkdirAll(filepath.Dir(o.Log), 0o755); err != nil {
-		return err
-	}
-	logFile, err := os.OpenFile(o.Log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	defer logFile.Close()
-	fmt.Fprintf(logFile, "\n--- wist %s: %s %s\n", time.Now().Format(time.RFC3339), o.Towa, strings.Join(o.Args, " "))
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, o.Towa, o.Args...)
-	cmd.Dir = o.Cwd
-	if len(o.Env) > 0 {
-		cmd.Env = append(os.Environ(), o.Env...)
-	}
-	cmd.Stderr = logFile
-	// Keep towa out of the terminal's process group so Ctrl+C reaches only us.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	stdin, err := cmd.StdinPipe()
+	proc, err := agent.Spawn(ctx, agent.Options{Bin: o.Towa, Args: o.Args, Env: o.Env, Cwd: o.Cwd, Log: o.Log})
 	if err != nil {
 		return err
 	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start %s: %w", o.Towa, err)
-	}
-	exited := make(chan error, 1)
-	go func() { exited <- cmd.Wait() }()
+	stdin, stdout := proc.Stdin, proc.Stdout
 
 	ui, err := newUI(o, cfg)
 	if err != nil {
-		_ = stdin.Close()
+		proc.Stop(2 * time.Second)
 		return err
 	}
 	client := &client{ui: ui}
@@ -106,12 +72,7 @@ func run(o Options, cfg config.Config) error {
 
 	runErr := ui.loop()
 	cancel()
-	_ = stdin.Close()
-	select {
-	case <-exited:
-	case <-time.After(2 * time.Second):
-		_ = cmd.Process.Kill()
-	}
+	proc.Stop(2 * time.Second)
 	if ui.lastSession != "" {
 		agent := ""
 		if o.Agent != "" {

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	acp "github.com/gfx-labs/go-acp"
+	"github.com/gfx-labs/wist/pkg/attach"
 )
 
 // Image attachments. Terminals only paste text, so an image comes in one of
@@ -22,7 +22,7 @@ import (
 
 // maxImageBytes bounds one attachment. Providers reject much larger images
 // anyway, and wist keeps the bytes in memory until the prompt is sent.
-const maxImageBytes = 8 << 20
+const maxImageBytes = attach.MaxBytes
 
 type attachment struct {
 	name string
@@ -39,14 +39,7 @@ func (a attachment) label() string {
 	return fmt.Sprintf("%s %s", a.name, size)
 }
 
-// imageMime reports the image type of data from its magic bytes, or "".
-func imageMime(data []byte) string {
-	switch ct := http.DetectContentType(data); ct {
-	case "image/png", "image/jpeg", "image/gif", "image/webp":
-		return ct
-	}
-	return ""
-}
+func imageMime(data []byte) string { return attach.Mime(data) }
 
 // clipboardImage reads an image from the system clipboard with wl-paste on
 // Wayland or xclip on X11.
@@ -134,31 +127,14 @@ func runTool(argv []string) ([]byte, error) {
 // imageFile loads p as an image attachment. It fails for files that are
 // not images.
 func imageFile(p string) (attachment, error) {
-	if home, err := os.UserHomeDir(); err == nil && strings.HasPrefix(p, "~/") {
-		p = filepath.Join(home, p[2:])
-	}
-	st, err := os.Stat(p)
+	im, err := attach.File(p)
 	if err != nil {
 		return attachment{}, err
 	}
-	if st.IsDir() {
-		return attachment{}, fmt.Errorf("%s is a directory", p)
-	}
-	if st.Size() > maxImageBytes {
-		return attachment{}, fmt.Errorf("%s is %d MB, over the %d MB limit", filepath.Base(p), st.Size()>>20, maxImageBytes>>20)
-	}
-	data, err := os.ReadFile(p)
-	if err != nil {
-		return attachment{}, err
-	}
-	mime := imageMime(data)
-	if mime == "" {
-		return attachment{}, fmt.Errorf("%s is not a png, jpeg, gif or webp image", filepath.Base(p))
-	}
-	return attachment{name: filepath.Base(p), mime: mime, data: data}, nil
+	return attachment{name: im.Name, mime: im.Mime, data: im.Data}, nil
 }
 
-var imageExts = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true}
+var imageExts = attach.Exts
 
 // pastedImagePath returns the image file a paste names, when the whole
 // paste is a single path or file:// uri, as a drag and drop from a file
