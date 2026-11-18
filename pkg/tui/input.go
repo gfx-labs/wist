@@ -173,6 +173,7 @@ var localCommands = []localCmd{
 	{"cwd", "show the working directory"},
 	{"info", "show session details"},
 	{"log", "show where towa's log is"},
+	{"reload", "restart the agent and reload its config"},
 	{"quit", "exit"},
 }
 
@@ -654,6 +655,8 @@ func (u *UI) localCommand(text string) bool {
 		u.info(u.sessionInfo())
 	case "log":
 		u.info("towa stderr goes to " + u.opts.Log)
+	case "reload":
+		u.reloadAgent()
 	case "quit", "exit", "q":
 		u.quit = true
 	default:

@@ -46,34 +46,59 @@ func run(o Options, cfg config.Config) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	proc, err := agent.Spawn(ctx, agent.Options{Bin: o.Towa, Args: o.Args, Env: o.Env, Cwd: o.Cwd, Log: o.Log})
-	if err != nil {
-		return err
-	}
-	stdin, stdout := proc.Stdin, proc.Stdout
-
 	ui, err := newUI(o, cfg)
 	if err != nil {
-		proc.Stop(2 * time.Second)
 		return err
 	}
-	client := &client{ui: ui}
-	conn := acp.NewClientSideConnection(client, stdin, stdout, nil)
-	ui.conn = conn
+	ac, err := startAgent(ctx, o, ui)
+	if err != nil {
+		return err
+	}
+	ui.conn = ac.conn
+
+	// /reload restarts the agent so it reads its config again. The reload
+	// goroutine owns ac: run never touches it after this point.
+	reloads := make(chan acp.SessionId, 1)
+	ui.reload = func(sid acp.SessionId) {
+		select {
+		case reloads <- sid:
+		default:
+		}
+	}
+	stopped := make(chan struct{})
 	go func() {
-		err := conn.Serve(ctx)
-		ui.post(func(u *UI) {
-			if ctx.Err() == nil {
-				u.addBlock(&block{kind: kindError, text: fmt.Sprintf("connection to towa closed: %v (see %s)", errOrEOF(err), o.Log)})
-				u.busy = false
+		defer close(stopped)
+		for {
+			select {
+			case sid := <-reloads:
+				ac.cancel()
+				ac.proc.Stop(2 * time.Second)
+				nac, err := startAgent(ctx, o, ui)
+				if err != nil {
+					ui.post(func(u *UI) {
+						u.reloading = false
+						u.errorf("reload: %v", err)
+					})
+					continue
+				}
+				ac = nac
+				done := make(chan struct{})
+				ui.post(func(u *UI) { u.conn = nac.conn; close(done) })
+				<-done
+				ui.connect(ctx, sid, "")
+				ui.post(func(u *UI) { u.reloading = false })
+			case <-ctx.Done():
+				ac.cancel()
+				ac.proc.Stop(2 * time.Second)
+				return
 			}
-		})
+		}
 	}()
-	go ui.connect(ctx)
+	go ui.connect(ctx, acp.SessionId(o.Resume), o.Prompt)
 
 	runErr := ui.loop()
 	cancel()
-	proc.Stop(2 * time.Second)
+	<-stopped
 	if ui.lastSession != "" {
 		agent := ""
 		if o.Agent != "" {
@@ -82,6 +107,34 @@ func run(o Options, cfg config.Config) error {
 		fmt.Printf("session %s\nresume with: wist%s --resume %s\n", ui.lastSession, agent, ui.lastSession)
 	}
 	return runErr
+}
+
+// agentConn is one agent process and the ACP connection to it.
+type agentConn struct {
+	proc   *agent.Process
+	conn   *acp.ClientSideConnection
+	cancel context.CancelFunc
+}
+
+// startAgent spawns the agent and serves ACP on its stdio. The connection
+// stops when cancel is called or ctx ends.
+func startAgent(ctx context.Context, o Options, ui *UI) (*agentConn, error) {
+	proc, err := agent.Spawn(ctx, agent.Options{Bin: o.Towa, Args: o.Args, Env: o.Env, Cwd: o.Cwd, Log: o.Log})
+	if err != nil {
+		return nil, err
+	}
+	cctx, ccancel := context.WithCancel(ctx)
+	conn := acp.NewClientSideConnection(&client{ui: ui}, proc.Stdin, proc.Stdout, nil)
+	go func() {
+		err := conn.Serve(cctx)
+		ui.post(func(u *UI) {
+			if cctx.Err() == nil {
+				u.addBlock(&block{kind: kindError, text: fmt.Sprintf("connection to towa closed: %v (see %s)", errOrEOF(err), o.Log)})
+				u.busy = false
+			}
+		})
+	}()
+	return &agentConn{proc: proc, conn: conn, cancel: ccancel}, nil
 }
 
 func errOrEOF(err error) error {

@@ -26,6 +26,11 @@ type UI struct {
 	funcs chan func(*UI)
 	quit  bool
 
+	// reload restarts the agent process and reconnects, so a config change
+	// is picked up. run sets it; nil means reload is unavailable.
+	reload    func(acp.SessionId)
+	reloading bool
+
 	// connection and session
 	agentName   string
 	canLoad     bool
@@ -230,7 +235,9 @@ func (u *UI) notify(msg string) {
 
 // --- connection ---------------------------------------------------------
 
-func (u *UI) connect(ctx context.Context) {
+// connect initializes the connection and opens resume, or a new session
+// when resume is empty. prompt is sent once the session exists.
+func (u *UI) connect(ctx context.Context, resume acp.SessionId, prompt string) {
 	u.ctx = ctx
 	title := "wist"
 	init, err := u.conn.Initialize(ctx, acp.InitializeRequest{
@@ -256,14 +263,34 @@ func (u *UI) connect(ctx context.Context) {
 			u.agentName = init.AgentInfo.Name + " " + init.AgentInfo.Version
 		}
 	})
-	if u.opts.Resume != "" {
-		u.loadSession(acp.SessionId(u.opts.Resume))
+	if resume != "" && init.AgentCapabilities.LoadSession {
+		u.loadSession(resume)
 	} else {
+		if resume != "" {
+			u.post(func(u *UI) { u.info("the agent cannot load sessions; started a new one") })
+		}
 		u.newSession()
 	}
-	if u.opts.Prompt != "" {
-		p := u.opts.Prompt
-		u.post(func(u *UI) { u.submit(p) })
+	if prompt != "" {
+		u.post(func(u *UI) { u.submit(prompt) })
+	}
+}
+
+// reloadAgent restarts the agent process and reconnects to it, loading the
+// current session again. The agent reads its config at start, so this is
+// how a config change takes effect.
+func (u *UI) reloadAgent() {
+	switch {
+	case u.reload == nil:
+		u.notify("reload is not available")
+	case u.busy:
+		u.notify("wait for the turn to end first")
+	case u.reloading:
+		u.notify("already reloading")
+	default:
+		u.reloading = true
+		u.notify("reloading the agent")
+		u.reload(u.session)
 	}
 }
 

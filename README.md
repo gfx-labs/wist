@@ -77,6 +77,7 @@ Permissions: when the agent asks (for example in `--ask` mode) and both stdin an
 - sessions: `/fork`, `/rename`, `/archive`, `/delete`, `/back`, and delete/archive/rename keys in the session picker
 - `/btw <question>` forks the session and asks the question in a new tmux pane. `/split` and `/split new` open a fork or a fresh session in a new pane
 - `/stats` and the status bar show files and lines changed this session
+- `/reload` restarts the agent process and loads the current session again, so a change to the agent's config (its model list, for example) takes effect without leaving wist
 - `~/.config/wist/config.yaml` (or `config.yml`; `config.toml` is no longer read): theme presets (dark, light, catppuccin-mocha, gruvbox, tokyonight, terminal, xresources; also `wist --theme NAME`), colors, remappable keys with conflict warnings, `spawn_hook`. `/theme`, `/keys`
 
   ```yaml
