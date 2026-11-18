@@ -55,7 +55,7 @@ func TestApplyTheme(t *testing.T) {
 		t.Fatalf("want 3 warnings, got %v", w)
 	}
 	for name := range themePresets {
-		if len(themePresets[name]) != len(themeColors) {
+		if name != "xresources" && len(themePresets[name]) != len(themeColors) {
 			t.Errorf("preset %s sets %d of %d colors", name, len(themePresets[name]), len(themeColors))
 		}
 	}

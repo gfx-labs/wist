@@ -38,6 +38,15 @@ var themePresets = map[string]map[string]string{
 		"green": "#b8bb26", "red": "#fb4934", "yellow": "#fabd2f", "cyan": "#8ec07c", "orange": "#fe8019",
 		"code_bg": "#1d2021", "panel_bg": "#3c3836", "sel_bg": "#504945", "add_bg": "#32361a", "del_bg": "#3c1f1e",
 	},
+	// terminal uses only the terminal's own palette (ANSI 0-15) and its
+	// default foreground/background, so it follows the terminal's colors.
+	"terminal": {
+		"text": "default", "dim": "gray", "faint": "gray", "accent": "navy", "user": "purple",
+		"green": "green", "red": "maroon", "yellow": "olive", "cyan": "teal", "orange": "red",
+		"code_bg": "default", "panel_bg": "default", "sel_bg": "black", "add_bg": "default", "del_bg": "default",
+	},
+	// xresources is filled at apply time from LoadXresources.
+	"xresources": nil,
 	"tokyonight": {
 		"text": "#c0caf5", "dim": "#737aa2", "faint": "#414868", "accent": "#7aa2f7", "user": "#bb9af7",
 		"green": "#9ece6a", "red": "#f7768e", "yellow": "#e0af68", "cyan": "#7dcfff", "orange": "#ff9e64",
@@ -69,6 +78,15 @@ func ApplyTheme(preset string, overrides map[string]string) []string {
 	if !ok {
 		warn = append(warn, fmt.Sprintf("theme: unknown preset %q (have %s)", preset, strings.Join(ThemeNames(), ", ")))
 		base = themePresets["dark"]
+	}
+	if preset == "xresources" {
+		x, _, err := LoadXresources()
+		if err != nil {
+			warn = append(warn, "theme: "+err.Error()+", using dark")
+			base = themePresets["dark"]
+		} else {
+			base = XresourcesTheme(x)
+		}
 	}
 	set := func(k, v string) {
 		p, ok := themeColors[k]

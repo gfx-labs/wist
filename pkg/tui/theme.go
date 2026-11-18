@@ -13,7 +13,7 @@ func (u *UI) pickTheme() {
 		if n == u.themeName {
 			sel = i
 		}
-		items = append(items, pickItem{label: n, value: n, current: n == u.themeName})
+		items = append(items, pickItem{label: n, detail: themeDetail[n], value: n, current: n == u.themeName})
 	}
 	u.openPicker("theme", items, sel, func(it pickItem) { u.setTheme(it.value) })
 }
@@ -34,4 +34,9 @@ func (u *UI) setTheme(name string) {
 	u.sc.Sync()
 	renderSynced()
 	u.notify("theme → " + name)
+}
+
+var themeDetail = map[string]string{
+	"xresources": "colors from xrdb -query, ~/.Xresources or ~/.Xdefaults ($WIST_XRESOURCES)",
+	"terminal":   "ANSI 0-15 and the terminal's default fg/bg",
 }

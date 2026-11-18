@@ -27,6 +27,7 @@ type Options struct {
 	Log      string   // file that receives the agent's stderr
 	Prompt   string   // prompt sent as soon as the session is ready
 	NoMouse  bool     // leave the mouse to the terminal
+	Theme    string   // theme preset overriding the config
 }
 
 // Run starts the agent process described by o, speaks ACP to it and runs

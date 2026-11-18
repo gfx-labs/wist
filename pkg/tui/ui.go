@@ -117,6 +117,9 @@ func newUI(o Options, cfg config.Config) (*UI, error) {
 		// Terminals without focus reporting never send events, so assume focus.
 		focused: true,
 	}
+	if o.Theme != "" {
+		cfg.Theme = o.Theme
+	}
 	u.themeName = cfg.Theme
 	if u.themeName == "" {
 		u.themeName = "dark"
@@ -751,12 +754,13 @@ func (u *UI) pickConfig() {
 			items = append(items, pickItem{label: o.Boolean.Name, detail: fmt.Sprint(o.Boolean.CurrentValue), value: "b:" + string(o.Boolean.Id)})
 		}
 	}
-	if len(items) == 0 {
-		u.notify("no config options")
-		return
-	}
+	items = append(items, pickItem{label: "theme", detail: u.themeName + " (xresources: from xrdb/~/.Xresources, terminal: terminal palette)", value: "t:"})
 	u.openPicker("session options", items, 0, func(it pickItem) {
 		kind, id, _ := strings.Cut(it.value, ":")
+		if kind == "t" {
+			u.pickTheme()
+			return
+		}
 		for _, o := range u.options {
 			if kind == "s" && o.Select != nil && string(o.Select.Id) == id {
 				u.pickOption(o.Select)
