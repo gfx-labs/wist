@@ -10,7 +10,49 @@ wist                                  # new session in the current directory
 wist --resume <session-id>            # load a stored session
 wist -p "fix the failing test"        # send a first prompt right away
 wist -- --models=codex:pro/gpt-6.2-sol   # anything after -- goes to towa
+wist ask "explain this repository"    # one prompt, no UI (see below)
+wist agents                           # list ACP registry agents
+wist --help                           # all flags; wist ask --help for ask
 ```
+
+## wist ask
+
+`wist ask` runs one prompt against the agent without the terminal UI and exits. It never draws a screen, so it works in scripts, CI and pipes.
+
+```sh
+wist ask "explain what this repository does"
+printf "summarize pkg/tui\n" | wist ask           # prompt from stdin
+git diff | wist ask "review this change"          # args, a blank line, then stdin
+wist ask -- "-v means what in towa?"              # everything after -- is prompt text
+wist ask --image ./ui.png "describe this interface"   # repeat --image for more
+wist ask --resume last "now add tests"            # continue the latest session in cwd
+wist ask --model codex:pro/gpt-6.2-sol --auto "fix the failing test"
+wist ask --json "what is 2+2" | jq -r .final_output
+```
+
+stdout receives the assistant's raw markdown as it streams. stderr receives progress: one line per tool call (`· Read file`, `✓ Edit a.go +3 -1`, `✗ Run command: failed`), plan updates, notices and a usage line at the end. On a terminal stderr gets colors and a spinner; `--no-color`, `NO_COLOR` or `TERM=dumb` make it plain. `--quiet` prints no assistant text; `--json` wins over `--quiet` and prints exactly one object at the end:
+
+```json
+{
+  "output": "4",
+  "final_output": "4",
+  "exit_code": 0,
+  "model": "claude:max/claude-opus-5-5#medium",
+  "session_id": "01a1ec3b-3dac-741f-89b3-ac623ee382ef",
+  "stop_reason": "end_turn",
+  "steps": 1,
+  "usage": {"input_tokens": 4, "output_tokens": 3, "cache_read_tokens": 16645, "cache_write_tokens": 82},
+  "tool_calls": []
+}
+```
+
+`output` is all assistant text of the turn, `final_output` the text after the last tool call (empty unless the turn ended with `end_turn`). `steps` counts model responses: a step starts with the first text or tool call, and again with each text that follows a tool call. `tool_calls` lists `name` (the tool title), `kind` and `status`. On failure `error` holds the message. Cache counts appear only when the agent reports them.
+
+Exit status: `0` when the turn ends with `end_turn`; `1` for any failure (agent error, agent exit, `--timeout`, or any other stop reason such as `refusal`, `max_tokens` or `cancelled`); `2` for usage mistakes (unknown flag, empty prompt, `--no-save` with `--resume`, a bad `--model`/`--mode` value, an unreadable `--image`). Ctrl+C sends `session/cancel`, waits briefly and exits `130` (`143` on SIGTERM); an interrupted `--json` run writes no result.
+
+Flags: `--resume <id|last>`, `--no-save` (deletes the session after the run via `session/delete`; if the agent cannot delete sessions it is kept and a note goes to stderr), `--model <value>` (a value, name, or unique suffix of the agent's model option; a wrong value lists the choices), `--mode`/`--permission-mode ask|auto` with `--ask`/`--auto` shorthands, `--image <path>`, `--system <text>` (replaces the system prompt; needs the agent's `systemPrompt.mode.override` capability), `--timeout <dur>` (overall wall clock), `--cwd`, `--agent`, `--towa`, `--towa-args`, `--log`.
+
+Permissions: when the agent asks (for example in `--ask` mode) and both stdin and stderr are a terminal without `--json`/`--quiet`, wist prompts on stderr and reads the answer from `/dev/tty` (`y`, `a`, `n` or an option number). `--prompt-permissions` allows that prompt with `--json`/`--quiet`. Otherwise the request is rejected (the agent's reject-once option) and stderr says so. Agent stderr goes to the same log as the UI.
 
 ## features
 
