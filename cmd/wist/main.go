@@ -1,6 +1,7 @@
-// Command wist is an interactive terminal client for towa. It starts
-// towa as a child process and speaks the Agent Client Protocol to it over
-// the child's standard input and output.
+// Command wist is an interactive terminal client for towa. Its windows
+// connect to the wist daemon, which runs towa as a child process and
+// speaks the Agent Client Protocol to it over the child's standard input
+// and output.
 package main
 
 import (
@@ -35,7 +36,7 @@ func rootCommand(cfg config.Config) *cli.Command {
 	return &cli.Command{
 		Name:            "wist",
 		Usage:           "interactive terminal client for ACP agents (towa by default)",
-		UsageText:       "wist [flags] [-- agent args...]\nwist ask [flags] [--] <prompt...>\nwist sessions [flags]\nwist agents",
+		UsageText:       "wist [flags] [-- agent args...]\nwist ask [flags] [--] <prompt...>\nwist sessions [flags]\nwist agents\nwist daemon [flags] [-- agent args...]",
 		Description:     "config: " + config.Path(),
 		HideHelpCommand: true,
 		// main reports errors and picks the exit status.
@@ -51,9 +52,11 @@ func rootCommand(cfg config.Config) *cli.Command {
 			&cli.StringFlag{Name: "p", Local: true, Destination: &o.Prompt, Usage: "send this prompt as soon as the session is ready"},
 			&cli.StringFlag{Name: "theme", Local: true, Destination: &o.Theme, Usage: "color theme preset (e.g. dark, terminal, xresources)"},
 			&cli.BoolFlag{Name: "no-mouse", Local: true, Destination: &o.NoMouse, Usage: "do not capture the mouse (keeps the terminal's own selection)"},
+			socketFlag(&o.Socket),
 		},
-		Commands: []*cli.Command{askCommand(cfg), sessionsCommand(cfg), agentsCommand()},
+		Commands: []*cli.Command{askCommand(cfg), sessionsCommand(cfg), agentsCommand(), daemonCommand(cfg)},
 		Action: func(_ context.Context, cmd *cli.Command) error {
+			o.AgentSet = cmd.IsSet("towa") || cmd.IsSet("agent") || cmd.IsSet("towa-args") || cmd.Args().Len() > 0
 			finishOptions(&o, extra, cmd.Args().Slice(), cfg)
 			if err := tui.Run(o, cfg); err != nil {
 				return cli.Exit("wist: "+err.Error(), 1)
