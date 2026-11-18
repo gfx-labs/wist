@@ -148,8 +148,7 @@ type runner struct {
 	lastPlan string
 }
 
-func (r *runner) run(ctx context.Context) (Result, error) {
-	var res Result
+func (r *runner) run(ctx context.Context) (res Result, err error) {
 	var images []attach.Image
 	for _, p := range r.o.Images {
 		im, err := attach.File(p)
