@@ -35,7 +35,7 @@ func rootCommand(cfg config.Config) *cli.Command {
 	return &cli.Command{
 		Name:            "wist",
 		Usage:           "interactive terminal client for ACP agents (towa by default)",
-		UsageText:       "wist [flags] [-- agent args...]\nwist ask [flags] [--] <prompt...>\nwist agents",
+		UsageText:       "wist [flags] [-- agent args...]\nwist ask [flags] [--] <prompt...>\nwist sessions [flags]\nwist agents",
 		Description:     "config: " + config.Path(),
 		HideHelpCommand: true,
 		// main reports errors and picks the exit status.
@@ -52,7 +52,7 @@ func rootCommand(cfg config.Config) *cli.Command {
 			&cli.StringFlag{Name: "theme", Local: true, Destination: &o.Theme, Usage: "color theme preset (e.g. dark, terminal, xresources)"},
 			&cli.BoolFlag{Name: "no-mouse", Local: true, Destination: &o.NoMouse, Usage: "do not capture the mouse (keeps the terminal's own selection)"},
 		},
-		Commands: []*cli.Command{askCommand(cfg), agentsCommand()},
+		Commands: []*cli.Command{askCommand(cfg), sessionsCommand(cfg), agentsCommand()},
 		Action: func(_ context.Context, cmd *cli.Command) error {
 			finishOptions(&o, extra, cmd.Args().Slice(), cfg)
 			if err := tui.Run(o, cfg); err != nil {

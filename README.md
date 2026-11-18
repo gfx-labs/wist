@@ -11,9 +11,25 @@ wist --resume <session-id>            # load a stored session
 wist -p "fix the failing test"        # send a first prompt right away
 wist -- --models=codex:pro/gpt-6.2-sol   # anything after -- goes to towa
 wist ask "explain this repository"    # one prompt, no UI (see below)
+wist sessions -w 'gfx-labs'           # stored sessions, filtered by workdir (see below)
 wist agents                           # list ACP registry agents
 wist --help                           # all flags; wist ask --help for ask
 ```
+
+## wist sessions
+
+`wist sessions` lists the stored sessions the agent reports across every working directory, newest first, and exits.
+
+```sh
+wist sessions                              # table: updated, id, title, workdir
+wist sessions -w '/gfx-labs/(wist|towa)$'  # only matching working directories
+wist sessions --json | jq -r '.[].session_id'
+wist sessions --archived only              # archived sessions only
+```
+
+`--workdir`/`-w` takes a Go regular expression matched against the session's working directory, unanchored, so `-w wist` matches any path containing `wist`. `--archived` is `exclude` (default), `include` or `only` and needs an agent that advertises the archive capability. `--json` prints `session_id`, `cwd`, `updated_at`, `title` and `archived` fields. Agent flags are the same as the other commands: `--towa`, `--agent`, `--towa-args`, `--log`, and `--timeout` (default 30s) bounds the whole listing.
+
+Exit status: `0` listing succeeded (also when nothing matched), `1` the agent failed, `2` a bad flag, regular expression or `--archived` value.
 
 ## wist ask
 
