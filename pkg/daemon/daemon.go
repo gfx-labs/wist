@@ -39,6 +39,7 @@ type Daemon struct {
 	mu       sync.Mutex
 	up       *upstream
 	sessions map[acp.SessionId]*session
+	watchers map[*viewer]struct{}
 }
 
 // upstream is one agent process and the ACP connection to it.
@@ -103,7 +104,7 @@ func Run(ctx context.Context, o Options) error {
 	defer func() { _ = store.Close() }()
 	ctx, shutdown := context.WithCancel(ctx)
 	defer shutdown()
-	d := &Daemon{opts: o, store: store, log: log, ctx: ctx, shutdown: shutdown, sessions: map[acp.SessionId]*session{}}
+	d := &Daemon{opts: o, store: store, log: log, ctx: ctx, shutdown: shutdown, sessions: map[acp.SessionId]*session{}, watchers: map[*viewer]struct{}{}}
 	if _, err := d.agent(); err != nil {
 		_ = ln.Close()
 		return err
@@ -231,6 +232,30 @@ func (d *Daemon) attachLocked(s *session, v *viewer) {
 	for p := range s.perms {
 		go p.ask(v)
 	}
+	d.changedLocked(s)
+}
+
+// fill copies the session's live state into r.
+func (s *session) fill(r *StoredSession) {
+	r.Busy, r.Viewers, r.Waiting = s.busy, len(s.viewers), len(s.perms)
+}
+
+// changedLocked tells the watchers about s's current state. d.mu must be
+// held.
+func (d *Daemon) changedLocked(s *session) {
+	if len(d.watchers) == 0 {
+		return
+	}
+	row, err := d.store.Session(d.ctx, s.id)
+	if err != nil {
+		d.log.Warn("read session", "session", s.id, "err", err)
+		return
+	}
+	m := StoredSession{SessionRow: row}
+	s.fill(&m)
+	for w := range d.watchers {
+		w.enqueue(m)
+	}
 }
 
 // broadcastLocked sends an update to the session's viewers except skip.
@@ -291,6 +316,7 @@ func (d *Daemon) serve(c net.Conn) {
 		MethodSearch:   v.search,
 		MethodReload:   v.reload,
 		MethodShutdown: v.stopDaemon,
+		MethodWatch:    v.watch,
 	} {
 		if err := v.conn.RegisterExtensionRequest(method, h); err != nil {
 			d.log.Error("register extension", "method", method, "err", err)
@@ -300,8 +326,10 @@ func (d *Daemon) serve(c net.Conn) {
 	err := v.conn.Serve(d.ctx)
 	d.log.Debug("viewer closed", "err", err)
 	d.mu.Lock()
+	delete(d.watchers, v)
 	for _, s := range v.sessions {
 		delete(s.viewers, v)
+		d.changedLocked(s)
 	}
 	d.mu.Unlock()
 }
@@ -342,6 +370,9 @@ func (c *client) SessionUpdate(_ context.Context, n acp.SessionNotification) err
 	s := d.sessionLocked(n.SessionId, "")
 	d.recordLocked(s, n.Update)
 	d.broadcastLocked(s, nil, n.Update)
+	if n.Update.SessionInfoUpdate != nil {
+		d.changedLocked(s)
+	}
 	return nil
 }
 
@@ -356,10 +387,12 @@ func (c *client) RequestPermission(ctx context.Context, req acp.RequestPermissio
 	for v := range s.viewers {
 		go p.ask(v)
 	}
+	d.changedLocked(s)
 	d.mu.Unlock()
 	defer func() {
 		d.mu.Lock()
 		delete(s.perms, p)
+		d.changedLocked(s)
 		d.mu.Unlock()
 	}()
 	select {
