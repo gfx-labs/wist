@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
 	"net"
@@ -313,4 +314,56 @@ func TestReloadKeepsSessions(t *testing.T) {
 	}
 	<-a.asked
 	a.waitFor(t, "agent: echo one", "agent: echo two")
+}
+
+func TestWatchReportsSessionState(t *testing.T) {
+	dir := t.TempDir()
+	socket, stop := startDaemon(t, dir)
+	defer stop()
+	ctx := t.Context()
+
+	w := connectViewer(t, socket, true)
+	changes := make(chan StoredSession, 16)
+	if err := w.conn.RegisterExtensionNotification(MethodSessionChanged, func(_ context.Context, _ string, params jsontext.Value) (any, *acp.RequestError) {
+		var s StoredSession
+		if err := json.Unmarshal(params, &s); err != nil {
+			t.Error(err)
+		}
+		changes <- s
+		return nil, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.conn.SendExtensionRequest(ctx, MethodWatch, map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+
+	a := connectViewer(t, socket, true)
+	ns, err := a.conn.NewSession(ctx, acp.NewSessionRequest{Cwd: dir, McpServers: []acp.McpServer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.conn.Prompt(ctx, acp.PromptRequest{SessionId: ns.SessionId, Prompt: prompt("x")}); err != nil {
+		t.Fatal(err)
+	}
+	<-a.asked
+	var sawBusy, sawWaiting bool
+	for {
+		select {
+		case s := <-changes:
+			if s.ID != string(ns.SessionId) {
+				t.Fatalf("change for %s", s.ID)
+			}
+			sawBusy = sawBusy || s.Busy
+			sawWaiting = sawWaiting || s.Waiting == 1
+			if sawBusy && sawWaiting && !s.Busy && s.Waiting == 0 {
+				if s.Viewers != 1 || s.Cwd != dir {
+					t.Fatalf("final state %+v", s)
+				}
+				return
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("busy %v waiting %v", sawBusy, sawWaiting)
+		}
+	}
 }

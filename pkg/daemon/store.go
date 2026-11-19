@@ -198,7 +198,8 @@ type Hit struct {
 }
 
 // Search finds messages containing every word of query, best match first.
-func (s *Store) Search(ctx context.Context, query string, limit int) ([]Hit, error) {
+// A non-empty session limits the search to that session.
+func (s *Store) Search(ctx context.Context, query string, session acp.SessionId, limit int) ([]Hit, error) {
 	match := ftsQuery(query)
 	if match == "" {
 		return nil, nil
@@ -206,7 +207,7 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]Hit, err
 	rows, err := s.db.QueryContext(ctx, `SELECT m.session, coalesce(s.title, ''), coalesce(s.cwd, ''), m.kind,
 			snippet(messages, 2, '[', ']', '…', 16)
 		FROM messages m LEFT JOIN sessions s ON s.id = m.session
-		WHERE messages MATCH ? ORDER BY rank LIMIT ?`, match, limit)
+		WHERE messages MATCH ? AND (? = '' OR m.session = ?) ORDER BY rank LIMIT ?`, match, string(session), string(session), limit)
 	if err != nil {
 		return nil, err
 	}

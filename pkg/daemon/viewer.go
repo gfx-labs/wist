@@ -20,6 +20,12 @@ const (
 	MethodSearch = "_wist/search"
 	// MethodReload restarts the agent so it reads its config again.
 	MethodReload = "_wist/reload"
+	// MethodWatch subscribes the connection to MethodSessionChanged.
+	MethodWatch = "_wist/watch"
+	// MethodSessionChanged is a notification carrying a StoredSession
+	// whenever a session's title, busy state, viewers or pending
+	// permission requests change.
+	MethodSessionChanged = "_wist/session"
 )
 
 // StoredSession is one entry of MethodSessions.
@@ -27,12 +33,16 @@ type StoredSession struct {
 	SessionRow
 	Busy    bool `json:"busy"`
 	Viewers int  `json:"viewers"`
+	// Waiting counts permission requests no viewer has answered.
+	Waiting int `json:"waiting"`
 }
 
 // SearchRequest is the parameter of MethodSearch.
 type SearchRequest struct {
 	Query string `json:"query"`
 	Limit int    `json:"limit,omitempty"`
+	// SessionID limits the search to one session when set.
+	SessionID acp.SessionId `json:"sessionId,omitempty"`
 }
 
 // viewer is one connected client of the daemon.
@@ -43,9 +53,10 @@ type viewer struct {
 	// sessions is guarded by d.mu.
 	sessions map[acp.SessionId]*session
 
-	// out queues updates so a slow viewer never blocks the agent.
+	// out queues messages so a slow viewer never blocks the agent: an
+	// acp.SessionNotification or a StoredSession for MethodSessionChanged.
 	outMu sync.Mutex
-	out   []acp.SessionNotification
+	out   []any
 	wake  chan struct{}
 	once  sync.Once
 }
@@ -56,13 +67,15 @@ var (
 )
 
 // notify queues an update for the viewer.
-func (v *viewer) notify(n acp.SessionNotification) {
+func (v *viewer) notify(n acp.SessionNotification) { v.enqueue(n) }
+
+func (v *viewer) enqueue(m any) {
 	v.once.Do(func() {
 		v.wake = make(chan struct{}, 1)
 		go v.pump()
 	})
 	v.outMu.Lock()
-	v.out = append(v.out, n)
+	v.out = append(v.out, m)
 	v.outMu.Unlock()
 	select {
 	case v.wake <- struct{}{}:
@@ -81,8 +94,15 @@ func (v *viewer) pump() {
 		batch := v.out
 		v.out = nil
 		v.outMu.Unlock()
-		for _, n := range batch {
-			if err := v.conn.SessionUpdate(v.d.ctx, n); err != nil {
+		for _, m := range batch {
+			var err error
+			switch m := m.(type) {
+			case acp.SessionNotification:
+				err = v.conn.SessionUpdate(v.d.ctx, m)
+			case StoredSession:
+				err = v.conn.SendExtensionNotification(v.d.ctx, MethodSessionChanged, m)
+			}
+			if err != nil {
 				return
 			}
 		}
@@ -245,6 +265,7 @@ func (v *viewer) Prompt(ctx context.Context, p acp.PromptRequest) (acp.PromptRes
 	d.mu.Lock()
 	up := s.up
 	s.busy = true
+	d.changedLocked(s)
 	// The agent does not echo the prompt, so the other viewers see it
 	// here, and the store keeps it for replay.
 	for _, b := range p.Prompt {
@@ -262,6 +283,9 @@ func (v *viewer) Prompt(ctx context.Context, p acp.PromptRequest) (acp.PromptRes
 	if err := d.store.Touch(d.ctx, s.id, s.cwd); err != nil {
 		d.log.Warn("store session", "session", s.id, "err", err)
 	}
+	d.mu.Lock()
+	d.changedLocked(s)
+	d.mu.Unlock()
 	return resp, err
 }
 
@@ -417,7 +441,7 @@ func (v *viewer) listStored(ctx context.Context, _ string, _ jsontext.Value) (an
 	for i, r := range rows {
 		out[i].SessionRow = r
 		if s := v.d.sessions[acp.SessionId(r.ID)]; s != nil {
-			out[i].Busy, out[i].Viewers = s.busy, len(s.viewers)
+			s.fill(&out[i])
 		}
 	}
 	v.d.mu.Unlock()
@@ -432,7 +456,7 @@ func (v *viewer) search(ctx context.Context, _ string, params jsontext.Value) (a
 	if req.Limit <= 0 {
 		return nil, acp.NewInvalidParams(map[string]any{"error": "limit must be positive"})
 	}
-	hits, err := v.d.store.Search(ctx, req.Query, req.Limit)
+	hits, err := v.d.store.Search(ctx, req.Query, req.SessionID, req.Limit)
 	if err != nil {
 		return nil, acp.NewInternalError(map[string]any{"error": err.Error()})
 	}
@@ -450,5 +474,12 @@ func (v *viewer) stopDaemon(ctx context.Context, _ string, _ jsontext.Value) (an
 	if !acp.AfterResponse(ctx, v.d.shutdown) {
 		v.d.shutdown()
 	}
+	return map[string]any{}, nil
+}
+
+func (v *viewer) watch(context.Context, string, jsontext.Value) (any, *acp.RequestError) {
+	v.d.mu.Lock()
+	v.d.watchers[v] = struct{}{}
+	v.d.mu.Unlock()
 	return map[string]any{}, nil
 }
