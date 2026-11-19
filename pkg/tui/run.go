@@ -23,18 +23,24 @@ type Options struct {
 	PassArgs []string // the user's extra agent args, forwarded to child windows
 	AgentSet bool     // the agent was chosen on the command line
 	Socket   string   // daemon socket
-	Cwd      string   // session working directory
-	Resume   string   // session id to load instead of starting a new one
-	Log      string   // file that receives the agent's stderr
-	Prompt   string   // prompt sent as soon as the session is ready
-	NoMouse  bool     // leave the mouse to the terminal
-	Theme    string   // theme preset overriding the config
+	// TowaSocket is a towa daemon socket the wist daemon connects to;
+	// empty runs towa as the daemon's child.
+	TowaSocket string
+	Cwd        string // session working directory
+	Resume     string // session id to load instead of starting a new one
+	Log        string // file that receives the agent's stderr
+	Prompt     string // prompt sent as soon as the session is ready
+	NoMouse    bool   // leave the mouse to the terminal
+	Theme      string // theme preset overriding the config
 }
 
 // DaemonArgs are the wist arguments that start a daemon running the agent
 // o describes.
 func (o Options) DaemonArgs() []string {
 	args := []string{"daemon", "--socket", o.Socket, "--log", o.Log}
+	if o.TowaSocket != "" {
+		args = append(args, "--towa-socket", o.TowaSocket)
+	}
 	if o.Agent != "" {
 		args = append(args, "--agent", o.Agent)
 	} else {

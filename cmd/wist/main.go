@@ -46,6 +46,7 @@ func rootCommand(cfg config.Config) *cli.Command {
 			&cli.StringFlag{Name: "towa", Local: true, Value: defTowa, Destination: &o.Towa, Usage: "path of the towa binary"},
 			&cli.StringFlag{Name: "agent", Local: true, Value: cfg.Agent, Destination: &o.Agent, Usage: "run this ACP registry agent instead of towa (see: wist agents)"},
 			&cli.StringFlag{Name: "towa-args", Local: true, Destination: &extra, Usage: "extra arguments for towa, split on spaces (e.g. \"--models=claude:max/claude-opus-5-5\")"},
+			&cli.StringFlag{Name: "towa-socket", Local: true, Value: cfg.TowaSocket, Destination: &o.TowaSocket, Usage: "have the daemon connect to the towa daemon on this unix socket, starting towa serve on it when none listens"},
 			&cli.StringFlag{Name: "cwd", Local: true, Destination: &o.Cwd, Usage: "working directory of the session (default: current directory)"},
 			&cli.StringFlag{Name: "resume", Local: true, Destination: &o.Resume, Usage: "load the session with this id instead of starting a new one"},
 			&cli.StringFlag{Name: "log", Local: true, Destination: &o.Log, Usage: "file that receives towa's stderr (default: $XDG_STATE_HOME/wist/towa.log)"},
@@ -56,7 +57,7 @@ func rootCommand(cfg config.Config) *cli.Command {
 		},
 		Commands: []*cli.Command{askCommand(cfg), sessionsCommand(cfg), agentsCommand(), daemonCommand(cfg)},
 		Action: func(_ context.Context, cmd *cli.Command) error {
-			o.AgentSet = cmd.IsSet("towa") || cmd.IsSet("agent") || cmd.IsSet("towa-args") || cmd.Args().Len() > 0
+			o.AgentSet = cmd.IsSet("towa") || cmd.IsSet("agent") || cmd.IsSet("towa-args") || cmd.IsSet("towa-socket") || cmd.Args().Len() > 0
 			finishOptions(&o, extra, cmd.Args().Slice(), cfg)
 			if err := tui.Run(o, cfg); err != nil {
 				return cli.Exit("wist: "+err.Error(), 1)

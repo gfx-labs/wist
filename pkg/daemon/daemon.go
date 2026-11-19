@@ -149,7 +149,7 @@ func (d *Daemon) agent() (*upstream, error) {
 
 func (d *Daemon) start() (*upstream, error) {
 	ctx, cancel := context.WithCancel(d.ctx)
-	proc, err := agent.Spawn(ctx, d.opts.Agent)
+	proc, err := agent.Start(ctx, d.opts.Agent)
 	if err != nil {
 		cancel()
 		return nil, err

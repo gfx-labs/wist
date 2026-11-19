@@ -55,6 +55,7 @@ func daemonCommand(cfg config.Config) *cli.Command {
 			&cli.StringFlag{Name: "towa", Value: defTowa, Destination: &ao.Bin, Usage: "path of the towa binary"},
 			&cli.StringFlag{Name: "agent", Value: cfg.Agent, Destination: &ao.Agent, Usage: "run this ACP registry agent instead of towa"},
 			&cli.StringFlag{Name: "towa-args", Destination: &extra, Usage: "extra arguments for the agent, split on spaces"},
+			&cli.StringFlag{Name: "towa-socket", Value: cfg.TowaSocket, Destination: &ao.Socket, Usage: "connect to the towa daemon on this unix socket, starting towa serve on it when none listens"},
 			&cli.StringFlag{Name: "log", Destination: &ao.Log, Usage: "file that receives the agent's stderr (default: $XDG_STATE_HOME/wist/towa.log)"},
 		},
 		Commands: []*cli.Command{{
