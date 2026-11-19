@@ -41,6 +41,8 @@ type StoredSession struct {
 type SearchRequest struct {
 	Query string `json:"query"`
 	Limit int    `json:"limit,omitempty"`
+	// SessionID limits the search to one session when set.
+	SessionID acp.SessionId `json:"sessionId,omitempty"`
 }
 
 // viewer is one connected client of the daemon.
@@ -454,7 +456,7 @@ func (v *viewer) search(ctx context.Context, _ string, params jsontext.Value) (a
 	if req.Limit <= 0 {
 		return nil, acp.NewInvalidParams(map[string]any{"error": "limit must be positive"})
 	}
-	hits, err := v.d.store.Search(ctx, req.Query, req.Limit)
+	hits, err := v.d.store.Search(ctx, req.Query, req.SessionID, req.Limit)
 	if err != nil {
 		return nil, acp.NewInternalError(map[string]any{"error": err.Error()})
 	}

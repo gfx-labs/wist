@@ -25,7 +25,7 @@ The first wist window starts the daemon in the background, and later windows con
 - Several windows can open one session. Each one sees the others' prompts and output, prompts run in the order they arrive, and a permission request goes to every window, where the first answer wins.
 - Every session's updates are stored in SQLite (`$XDG_STATE_HOME/wist/daemon.db`), so attaching replays from the daemon instead of from the agent. Messages are indexed for full text search.
 - The agent flags (`--towa`, `--agent`, `--towa-args`, args after `--`) take effect only when they start the daemon. A window that finds a daemon already running uses its agent and says so. Run `wist daemon stop` to restart with other flags.
-- Other ACP clients, such as a web UI, connect to the same socket. Besides ACP, the daemon answers `_wist/sessions` (stored sessions with busy state and viewer count), `_wist/search` (`{"query": "...", "limit": n}`), `_wist/reload`, `_wist/shutdown` and `_wist/watch`, after which the connection gets a `_wist/session` notification whenever a session's title, busy state, viewers or pending permission requests change.
+- Other ACP clients, such as a web UI, connect to the same socket. Besides ACP, the daemon answers `_wist/sessions` (stored sessions with busy state and viewer count), `_wist/search` (`{"query": "...", "limit": n, "sessionId": "..."}`, sessionId optional), `_wist/reload`, `_wist/shutdown` and `_wist/watch`, after which the connection gets a `_wist/session` notification whenever a session's title, busy state, viewers or pending permission requests change.
 - `wist daemon` runs it in the foreground and logs to stderr. When a window starts it, the log is `$XDG_STATE_HOME/wist/daemon.log`.
 
 ## wist sessions
