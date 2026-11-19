@@ -30,7 +30,7 @@ The first wist window starts the daemon in the background, and later windows con
 
 ## wist sessions
 
-`wist sessions` lists the stored sessions the agent reports across every working directory, newest first, and exits.
+`wist sessions` lists the stored sessions the daemon's agent reports across every working directory, newest first, and exits. It asks the daemon on `--socket` (else `$WIST_SOCKET`, else the default socket) instead of running an agent of its own, so it sees the same sessions every window does and never races a second `towa` over the session store. When nothing listens on the socket, it starts the daemon the way a window would; that daemon stays running.
 
 ```sh
 wist sessions                              # table: updated, id, title, workdir
@@ -39,9 +39,9 @@ wist sessions --json | jq -r '.[].session_id'
 wist sessions --archived only              # archived sessions only
 ```
 
-`--workdir`/`-w` takes a Go regular expression matched against the session's working directory, unanchored, so `-w wist` matches any path containing `wist`. `--archived` is `exclude` (default), `include` or `only` and needs an agent that advertises the archive capability. `--json` prints `session_id`, `cwd`, `updated_at`, `title` and `archived` fields. Agent flags are the same as the other commands: `--towa`, `--agent`, `--towa-args`, `--log`, and `--timeout` (default 30s) bounds the whole listing.
+`--workdir`/`-w` takes a Go regular expression matched against the session's working directory, unanchored, so `-w wist` matches any path containing `wist`. `--archived` is `exclude` (default), `include` or `only` and needs an agent that advertises the archive capability. `--json` prints `session_id`, `cwd`, `updated_at`, `title` and `archived` fields. `--towa`, `--agent`, `--towa-args` and `--log` describe the daemon's agent, like the other commands, and only apply to a daemon this call starts. `--timeout` (default 30s) bounds the whole listing.
 
-Exit status: `0` listing succeeded (also when nothing matched), `1` the agent failed, `2` a bad flag, regular expression or `--archived` value.
+Exit status: `0` listing succeeded (also when nothing matched), `1` the daemon or its agent failed, `2` a bad flag, regular expression or `--archived` value.
 
 ## wist ask
 
@@ -102,7 +102,7 @@ Permissions: when the agent asks (for example in `--ask` mode) and both stdin an
 - `ctrl+z` suspends wist (towa keeps running), `alt+x` or `/edit` writes the prompt in `$EDITOR`, `/paste` reads the terminal clipboard over OSC 52
 - ASCII fallbacks for glyphs the terminal cannot show, and a 256-color palette without truecolor
 - per-language syntax highlighting, nested lists, reference links
-- sessions: `/fork`, `/rename`, `/archive`, `/delete`, `/back`, and delete/archive/rename keys in the session picker
+- sessions: `/fork`, `/rename`, `/archive`, `/delete`, `/back`, and delete/archive/rename keys in the session picker. The picker marks the sessions the daemon already has attached to a window ("connected", with the viewer count), so resuming one joins it instead of starting it fresh
 - `/btw <question>` forks the session and asks the question in a new tmux pane. `/split` and `/split new` open a fork or a fresh session in a new pane
 - `/stats` and the status bar show files and lines changed this session
 - `/reload` restarts the daemon's agent process and loads the current session again, so a change to the agent's config (its model list, for example) takes effect without leaving wist

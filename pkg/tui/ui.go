@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/wist/pkg/config"
+	"github.com/gfx-labs/wist/pkg/daemon"
 	"github.com/gfx-labs/wist/pkg/editor"
 	"github.com/gfx-labs/wist/pkg/render"
 )
@@ -803,6 +805,7 @@ func (u *UI) pickSession() {
 	cwd := u.opts.Cwd
 	go func() {
 		resp, err := u.conn.ListSessions(u.ctx, acp.ListSessionsRequest{Cwd: &cwd})
+		attached := u.daemonSessions(u.ctx)
 		u.post(func(u *UI) {
 			if err != nil {
 				u.errorf("list sessions: %v", err)
@@ -818,13 +821,18 @@ func (u *UI) pickSession() {
 				if s.Title != nil && *s.Title != "" {
 					label = *s.Title
 				}
-				detail := ""
+				var parts []string
 				if s.UpdatedAt != nil {
 					if t, err := time.Parse(time.RFC3339Nano, *s.UpdatedAt); err == nil {
-						detail = ago(t)
+						parts = append(parts, ago(t))
 					}
 				}
-				items = append(items, pickItem{label: label, detail: detail, value: string(s.SessionId), current: s.SessionId == u.session})
+				if n := attached[s.SessionId]; n > 1 {
+					parts = append(parts, fmt.Sprintf("connected · %d viewers", n))
+				} else if n == 1 {
+					parts = append(parts, "connected")
+				}
+				items = append(items, pickItem{label: label, detail: strings.Join(parts, " · "), value: string(s.SessionId), current: s.SessionId == u.session})
 			}
 			if len(items) == 0 {
 				u.notify("no stored sessions for " + cwd)
@@ -856,6 +864,27 @@ func (u *UI) pickSession() {
 			}
 		})
 	}()
+}
+
+// daemonSessions returns the viewer count of every session the daemon
+// holds, so the picker can mark the sessions another window is attached to.
+// A daemon that does not answer yields an empty map.
+func (u *UI) daemonSessions(ctx context.Context) map[acp.SessionId]int {
+	raw, err := u.conn.SendExtensionRequest(ctx, daemon.MethodSessions, map[string]any{})
+	if err != nil {
+		return nil
+	}
+	var resp struct {
+		Sessions []daemon.StoredSession `json:"sessions"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil
+	}
+	out := make(map[acp.SessionId]int, len(resp.Sessions))
+	for _, s := range resp.Sessions {
+		out[acp.SessionId(s.ID)] = s.Viewers
+	}
+	return out
 }
 
 func deref(s *string) string {

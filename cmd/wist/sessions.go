@@ -15,20 +15,24 @@ import (
 	"github.com/gfx-labs/wist/pkg/ask"
 	"github.com/gfx-labs/wist/pkg/config"
 	"github.com/gfx-labs/wist/pkg/sessions"
+	"github.com/gfx-labs/wist/pkg/tui"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/term"
 )
 
 // sessionsHelp is the long description of `wist sessions`.
-const sessionsHelp = `List the stored sessions the agent reports, newest first, with their id,
-title and working directory. The listing covers sessions of every working
-directory; --workdir narrows it to the ones whose directory matches a Go
-regular expression. Pass an id to wist --resume or wist ask --resume to
+const sessionsHelp = `List the stored sessions the daemon's agent reports, newest first, with
+their id, title and working directory. The listing goes through the wist
+daemon on --socket, which is started when none is running; the agent flags
+only apply to a daemon this command starts. It covers sessions of every
+working directory; --workdir narrows it to the ones whose directory matches
+a Go regular expression. Pass an id to wist --resume or wist ask --resume to
 continue one.`
 
 func sessionsCommand(cfg config.Config) *cli.Command {
 	var (
 		o       sessions.Options
+		dopt    tui.Options
 		extra   string
 		timeout time.Duration
 		jsonOut bool
@@ -47,11 +51,12 @@ func sessionsCommand(cfg config.Config) *cli.Command {
 			&cli.StringFlag{Name: "workdir", Aliases: []string{"w"}, Value: "", Usage: "only sessions whose working directory matches this regular expression"},
 			&cli.StringFlag{Name: "archived", Value: "exclude", Usage: "archived sessions to list: exclude, include or only"},
 			&cli.BoolFlag{Name: "json", Destination: &jsonOut, Usage: "print a JSON array instead of a table"},
-			&cli.DurationFlag{Name: "timeout", Value: 30 * time.Second, Destination: &timeout, Usage: "overall time limit for starting the agent and listing"},
-			&cli.StringFlag{Name: "towa", Value: defTowa, Destination: &o.Bin, Usage: "path of the towa binary"},
-			&cli.StringFlag{Name: "agent", Value: cfg.Agent, Destination: &o.Agent, Usage: "run this ACP registry agent instead of towa"},
-			&cli.StringFlag{Name: "towa-args", Destination: &extra, Usage: "extra arguments for the agent, split on spaces"},
-			&cli.StringFlag{Name: "log", Destination: &o.Log, Usage: "file that receives the agent's stderr"},
+			&cli.DurationFlag{Name: "timeout", Value: 30 * time.Second, Destination: &timeout, Usage: "overall time limit for reaching the daemon and listing"},
+			socketFlag(&dopt.Socket),
+			&cli.StringFlag{Name: "towa", Value: defTowa, Destination: &dopt.Towa, Usage: "path of the towa binary the daemon runs"},
+			&cli.StringFlag{Name: "agent", Value: cfg.Agent, Destination: &dopt.Agent, Usage: "agent the daemon runs instead of towa"},
+			&cli.StringFlag{Name: "towa-args", Destination: &extra, Usage: "extra arguments for the daemon's agent, split on spaces"},
+			&cli.StringFlag{Name: "log", Destination: &dopt.Log, Usage: "file that receives the daemon's agent stderr"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			re, err := compileWorkdir(cmd.String("workdir"))
@@ -64,7 +69,7 @@ func sessionsCommand(cfg config.Config) *cli.Command {
 				fmt.Fprintf(os.Stderr, "wist sessions: --archived: %q is not exclude, include or only\n", o.Archived)
 				return cli.Exit("", ask.ExitUsage)
 			}
-			finishSessions(&o, extra, cfg)
+			finishSessions(&o, &dopt, extra, cfg)
 			return cli.Exit("", runSessions(ctx, o, re, jsonOut, timeout))
 		},
 	}
@@ -92,22 +97,26 @@ func validArchived(v string) bool {
 	return false
 }
 
-// finishSessions fills the agent defaults the way wist and wist ask do.
-func finishSessions(o *sessions.Options, extra string, cfg config.Config) {
-	if o.Agent == "towa" {
-		o.Agent = ""
+// finishSessions fills the daemon and agent defaults the way wist does, and
+// with them the arguments that start a daemon for the listing.
+func finishSessions(o *sessions.Options, dopt *tui.Options, extra string, cfg config.Config) {
+	if dopt.Agent == "towa" {
+		dopt.Agent = ""
 	}
 	if extra != "" {
-		o.Args = strings.Fields(extra)
-	} else if o.Agent == "" {
-		o.Args = append([]string{}, cfg.TowaArgs...)
+		dopt.Args = strings.Fields(extra)
+	} else if dopt.Agent == "" {
+		dopt.Args = append([]string{}, cfg.TowaArgs...)
 	}
-	if o.Cwd == "" {
-		o.Cwd, _ = os.Getwd()
+	if dopt.Log == "" {
+		dopt.Log = agent.DefaultLog(dopt.Agent)
 	}
-	if o.Log == "" {
-		o.Log = agent.DefaultLog(o.Agent)
+	self, err := os.Executable()
+	if err != nil {
+		self = "wist"
 	}
+	o.Socket = dopt.Socket
+	o.Daemon = append([]string{self}, dopt.DaemonArgs()...)
 }
 
 // runSessions lists, filters and prints the sessions; it returns the exit

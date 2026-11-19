@@ -1,5 +1,5 @@
-// Package sessions lists an agent's stored sessions over ACP. It is the
-// connection behind `wist sessions`.
+// Package sessions lists an agent's stored sessions by asking the wist
+// daemon over its unix socket. It is the connection behind `wist sessions`.
 package sessions
 
 import (
@@ -10,16 +10,13 @@ import (
 	"time"
 
 	acp "github.com/gfx-labs/go-acp"
-	"github.com/gfx-labs/wist/pkg/agent"
+	"github.com/gfx-labs/wist/pkg/daemon"
 )
 
-// Options describes how to run the agent for a listing.
+// Options describes how to reach the daemon for a listing.
 type Options struct {
-	Bin   string   // agent binary (towa unless Agent is set)
-	Agent string   // registry agent id; empty means towa
-	Args  []string // agent arguments
-	Cwd   string   // agent working directory
-	Log   string   // file that receives the agent's stderr
+	Socket string   // daemon socket
+	Daemon []string // argv that starts the daemon when none listens
 	// Archived selects the archive state to report: "exclude" (also the
 	// empty string), "include" or "only".
 	Archived string
@@ -36,29 +33,29 @@ type Session struct {
 	Archived  bool   `json:"archived,omitempty"`
 }
 
-// List lists the agent's stored sessions of every working directory, most
-// recently updated first. All pages are fetched.
+// List lists the daemon's agent's stored sessions of every working
+// directory, most recently updated first. All pages are fetched. It
+// connects to the daemon on o.Socket, starting it when nothing listens.
 func List(ctx context.Context, o Options) ([]Session, error) {
 	progress := o.Progress
 	if progress == nil {
 		progress = func(string) {}
 	}
-	ao := agent.Options{Bin: o.Bin, Agent: o.Agent, Args: o.Args, Cwd: o.Cwd, Log: o.Log}
-	if err := agent.Resolve(&ao, progress); err != nil {
-		return nil, err
+	progress("connecting to the daemon on " + o.Socket)
+	nc, spawned, err := daemon.Dial(ctx, o.Socket, o.Daemon)
+	if err != nil {
+		return nil, fmt.Errorf("connect to the daemon: %w", err)
+	}
+	defer func() { _ = nc.Close() }()
+	if spawned {
+		progress("started the daemon")
 	}
 	connCtx, stop := context.WithCancel(context.Background())
 	defer stop()
-	progress("starting agent")
-	proc, err := agent.Spawn(connCtx, ao)
-	if err != nil {
-		return nil, err
-	}
-	defer proc.Stop(2 * time.Second)
-	conn := acp.NewClientSideConnection(client{}, proc.Stdin, proc.Stdout, nil)
+	conn := acp.NewClientSideConnection(client{}, nc, nc, nil)
 	served := make(chan error, 1)
 	go func() { served <- conn.Serve(connCtx) }()
-	// call runs one request, giving up when ctx ends or the agent dies.
+	// call runs one request, giving up when ctx ends or the daemon goes.
 	call := func(f func(context.Context) error) error {
 		cctx, cancel := context.WithCancel(connCtx)
 		defer cancel()
@@ -70,7 +67,7 @@ func List(ctx context.Context, o Options) ([]Session, error) {
 		case <-ctx.Done():
 			return ctx.Err()
 		case err := <-served:
-			return fmt.Errorf("agent exited: %v", err)
+			return fmt.Errorf("connection to the daemon closed: %v", err)
 		}
 	}
 	title := "wist"
@@ -83,7 +80,7 @@ func List(ctx context.Context, o Options) ([]Session, error) {
 		return err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("initialize: %w (agent log: %s)", err, o.Log)
+		return nil, fmt.Errorf("initialize: %w (daemon log: %s)", err, daemon.LogPath())
 	}
 	caps := init.AgentCapabilities.SessionCapabilities
 	if caps.List == nil {
