@@ -197,7 +197,7 @@ func (u *UI) drawTranscript(top, bottom, w int) {
 	var all []render.Line
 	rs.codes = rs.codes[:0]
 	for i, b := range u.blocks {
-		ls := b.lines(cw, u.expandAll, u.showThinking)
+		ls := b.lines(cw, u.expandAll, u.showThinking, u.toolOutput)
 		if len(ls) == 0 {
 			continue
 		}
@@ -417,6 +417,8 @@ func (u *UI) drawStatus(y, w int) {
 		right, rst = u.flash, render.StYellow
 	case u.expandAll:
 		right, rst = "expanded · alt+e", render.StDim
+	case u.toolOutput != toolOutputPreview:
+		right, rst = "tool output "+u.toolOutput.String()+" · alt+o", render.StDim
 	default:
 		right, rst = "/help", render.StFaint
 	}

@@ -48,7 +48,8 @@ func rootCommand(cfg config.Config) *cli.Command {
 			&cli.StringFlag{Name: "towa-args", Local: true, Destination: &extra, Usage: "extra arguments for towa, split on spaces (e.g. \"--models=claude:max/claude-opus-5-5\")"},
 			&cli.StringFlag{Name: "towa-socket", Local: true, Value: cfg.TowaSocket, Destination: &o.TowaSocket, Usage: "have the daemon connect to the towa daemon on this unix socket, starting towa serve on it when none listens"},
 			&cli.StringFlag{Name: "cwd", Local: true, Destination: &o.Cwd, Usage: "working directory of the session (default: current directory)"},
-			&cli.StringFlag{Name: "resume", Local: true, Destination: &o.Resume, Usage: "load the session with this id instead of starting a new one"},
+			&cli.StringFlag{Name: "resume", Local: true, Destination: &o.Resume, Usage: "load the session with this id, title or part of a title instead of starting a new one"},
+			&cli.StringFlag{Name: "title", Local: true, Destination: &o.Title, Usage: "title the session this window starts or resumes"},
 			&cli.StringFlag{Name: "log", Local: true, Destination: &o.Log, Usage: "file that receives towa's stderr (default: $XDG_STATE_HOME/wist/towa.log)"},
 			&cli.StringFlag{Name: "p", Local: true, Destination: &o.Prompt, Usage: "send this prompt as soon as the window is ready, starting the session"},
 			&cli.StringFlag{Name: "theme", Local: true, Destination: &o.Theme, Usage: "color theme preset (e.g. dark, terminal, xresources)"},
@@ -58,6 +59,7 @@ func rootCommand(cfg config.Config) *cli.Command {
 		Commands: []*cli.Command{askCommand(cfg), sessionsCommand(cfg), agentsCommand(), daemonCommand(cfg)},
 		Action: func(_ context.Context, cmd *cli.Command) error {
 			o.AgentSet = cmd.IsSet("towa") || cmd.IsSet("agent") || cmd.IsSet("towa-args") || cmd.IsSet("towa-socket") || cmd.Args().Len() > 0
+			o.CwdSet = cmd.IsSet("cwd")
 			finishOptions(&o, extra, cmd.Args().Slice(), cfg)
 			if err := tui.Run(o, cfg); err != nil {
 				return cli.Exit("wist: "+err.Error(), 1)

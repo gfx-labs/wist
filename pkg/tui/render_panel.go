@@ -75,7 +75,7 @@ func (u *UI) panelContent(w int) (string, []render.Line) {
 	for i := len(u.blocks) - 1; i >= 0; i-- {
 		if b := u.blocks[i]; b.kind == kindTool {
 			body := b.bodyLines(w)
-			head := b.toolLines(w, false)[0]
+			head := b.toolLines(w, false, toolOutputHidden)[0]
 			return "tool", append([]render.Line{head, {}}, body...)
 		}
 	}

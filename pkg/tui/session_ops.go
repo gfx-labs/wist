@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	acp "github.com/gfx-labs/go-acp"
+	"github.com/gfx-labs/wist/pkg/sessions"
 )
 
 // --- soft interrupt -----------------------------------------------------
@@ -136,9 +137,56 @@ func (u *UI) forkSession() {
 	})
 }
 
+// resumeRef loads the session ref names: its id, its title or part of its
+// title, in any working directory. Several matches open a picker of them.
+// It runs off the UI goroutine.
+func (u *UI) resumeRef(ref string) {
+	all, err := sessions.ListAll(u.ctx, u.conn.ListSessions, acp.ListSessionsRequest{})
+	found := sessions.Find(all, ref)
+	switch {
+	case err != nil || len(found) == 0:
+		// Not listed (or no listing): it may still be an id the agent
+		// loads, such as an archived session's. The load reports a miss.
+		u.loadSession(acp.SessionId(ref))
+	case len(found) == 1:
+		u.attachSession(found[0])
+	default:
+		u.showSessions(fmt.Sprintf("%d sessions match %q", len(found), ref), found, true)
+	}
+}
+
+// attachSession loads s, moving the window to the session's working
+// directory unless --cwd chose one. It runs off the UI goroutine.
+func (u *UI) attachSession(s acp.SessionInfo) {
+	done := make(chan struct{})
+	u.post(func(u *UI) {
+		if s.Cwd != "" && s.Cwd != u.opts.Cwd && !u.opts.CwdSet {
+			u.opts.Cwd, u.files = s.Cwd, nil
+		}
+		close(done)
+	})
+	<-done
+	u.loadSession(s.SessionId)
+}
+
+// applyPendingTitle gives the session just created or loaded the title
+// asked for before it existed.
+func (u *UI) applyPendingTitle() {
+	if t := u.pendingTitle; t != "" && u.session != "" {
+		u.pendingTitle = ""
+		u.renameSession(u.session, t)
+	}
+}
+
 func (u *UI) renameSession(id acp.SessionId, title string) {
 	if title == "" {
 		u.notify("usage: /rename <title>")
+		return
+	}
+	if id == "" {
+		// The first prompt creates the session; it gets the title then.
+		u.pendingTitle, u.title = title, title
+		u.notify("the session will be titled " + title)
 		return
 	}
 	go func() {

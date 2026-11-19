@@ -19,6 +19,7 @@ import (
 //	agent: towa              # or a registry id such as gemini
 //	spawn_hook: "tmux split-window -h {cmd}"
 //	input_mode: vim         # or emacs (default)
+//	tool_output: hidden     # or preview (default) or full
 //	theme:
 //	  preset: tokyonight     # or theme: tokyonight
 //	  accent: "#7aa2f7"
@@ -34,6 +35,7 @@ type Config struct {
 	Theme      string              // theme preset name
 	Notify     string              // auto, off, desktop or terminal
 	InputMode  string              // emacs or vim
+	ToolOutput string              // hidden, preview or full
 	Colors     map[string]string   // theme color overrides
 	Keys       map[string][]string // key bindings by action name
 	Warnings   []string            // problems found while loading
@@ -169,6 +171,12 @@ func parse(b []byte) (Config, error) {
 				c.InputMode = one
 			} else {
 				warn(v, "input_mode must be emacs or vim")
+			}
+		case "tool_output":
+			if one == "hidden" || one == "preview" || one == "full" {
+				c.ToolOutput = one
+			} else {
+				warn(v, "tool_output must be hidden, preview or full")
 			}
 		default:
 			warn(kn, "unknown key %q", k)

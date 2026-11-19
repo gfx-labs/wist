@@ -66,6 +66,7 @@ func init() {
 		{"theme_picker", "pick a color theme", nil, (*UI).pickTheme},
 		{"expand_last", "expand the last tool output", []string{"ctrl+o"}, (*UI).toggleLastTool},
 		{"expand_all", "expand all tool output", []string{"alt+e"}, func(u *UI) { u.expandAll = !u.expandAll }},
+		{"tool_output", "cycle tool output: hidden, preview, full", []string{"alt+o"}, func(u *UI) { u.setToolOutput(u.toolOutput.next()) }},
 		{"toggle_thinking", "show reasoning", []string{"ctrl+t"}, func(u *UI) {
 			u.showThinking = !u.showThinking
 			u.notify(fmt.Sprintf("show thinking: %v", u.showThinking))

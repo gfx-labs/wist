@@ -27,7 +27,9 @@ type Options struct {
 	// empty runs towa as the daemon's child.
 	TowaSocket string
 	Cwd        string // session working directory
-	Resume     string // session id to load instead of starting a new one
+	CwdSet     bool   // Cwd was given on the command line
+	Resume     string // session to load instead of starting one: id, title or part of a title
+	Title      string // title for the window's first session
 	Log        string // file that receives the agent's stderr
 	Prompt     string // prompt sent as soon as the window is ready
 	NoMouse    bool   // leave the mouse to the terminal

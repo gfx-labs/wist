@@ -145,7 +145,7 @@ type localCmd struct {
 var localCommands = []localCmd{
 	{"help", "show keys and commands"},
 	{"new", "start a new session"},
-	{"resume", "pick a stored session to load"},
+	{"resume", "[id or title] load a session, or pick one"},
 	{"sessions", "pick a stored session to load"},
 	{"model", "pick the model"},
 	{"mode", "pick the permission mode"},
@@ -154,6 +154,7 @@ var localCommands = []localCmd{
 	{"compact", "ask towa to compact the context"},
 	{"cancel", "interrupt the running turn"},
 	{"expand", "toggle expanding all tool output"},
+	{"output", "[hidden|preview|full] how much tool output to show (no argument cycles)"},
 	{"thinking", "toggle showing reasoning"},
 	{"plan", "toggle the plan panel"},
 	{"copy", "copy the last answer to the clipboard"},
@@ -528,6 +529,13 @@ func (u *UI) toggleLastTool() {
 	}
 }
 
+// setToolOutput changes how much tool output the transcript shows. The
+// render cache keys on the mode, so no block needs marking dirty.
+func (u *UI) setToolOutput(m toolOutputMode) {
+	u.toolOutput = m
+	u.notify("tool output: " + m.String())
+}
+
 func (u *UI) pickHistory() {
 	var items []pickItem
 	for i := len(u.ed.Hist) - 1; i >= 0; i-- {
@@ -597,7 +605,11 @@ func (u *UI) localCommand(text string) bool {
 		go u.newSession()
 	case "resume", "sessions", "load":
 		if arg != "" {
-			go u.loadSession(acp.SessionId(arg))
+			if u.busy {
+				u.notify("wait for the turn to end first")
+				return true
+			}
+			go u.resumeRef(arg)
 		} else {
 			u.pickSession()
 		}
@@ -637,6 +649,14 @@ func (u *UI) localCommand(text string) bool {
 		u.cancelTurn()
 	case "expand":
 		u.expandAll = !u.expandAll
+	case "output":
+		if arg == "" {
+			u.setToolOutput(u.toolOutput.next())
+		} else if m, ok := parseToolOutput(arg); ok {
+			u.setToolOutput(m)
+		} else {
+			u.notify("usage: /output hidden|preview|full")
+		}
 	case "thinking":
 		u.showThinking = !u.showThinking
 	case "plan":
@@ -659,10 +679,6 @@ func (u *UI) localCommand(text string) bool {
 		if rest, ok := strings.CutPrefix(arg, "--id "); ok {
 			sid, title, _ := strings.Cut(strings.TrimSpace(rest), " ")
 			id, arg = acp.SessionId(sid), strings.TrimSpace(title)
-		}
-		if id == "" {
-			u.notify("no session yet")
-			return true
 		}
 		u.renameSession(id, arg)
 	case "archive":

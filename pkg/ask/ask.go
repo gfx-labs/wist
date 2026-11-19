@@ -17,6 +17,7 @@ import (
 	acp "github.com/gfx-labs/go-acp"
 	"github.com/gfx-labs/wist/pkg/agent"
 	"github.com/gfx-labs/wist/pkg/attach"
+	"github.com/gfx-labs/wist/pkg/sessions"
 )
 
 // Options configures one wist ask run.
@@ -29,7 +30,7 @@ type Options struct {
 	Socket string   // towa daemon socket; empty runs towa as a child
 	Prompt string   // prompt text
 	Images []string // image files to attach
-	Resume string   // session id, or "last"
+	Resume string   // session id, title or part of a title, or "last"
 	NoSave bool     // delete the session afterwards
 	Model  string   // model option value or name
 	Mode   string   // mode option value ("ask", "auto")
@@ -234,7 +235,8 @@ func (r *runner) run(ctx context.Context) (res Result, err error) {
 			return res, errors.New("--resume: this agent cannot load sessions")
 		}
 		id := r.o.Resume
-		if id == "last" {
+		switch {
+		case id == "last":
 			var list acp.ListSessionsResponse
 			cwd := r.o.Cwd
 			if err := call(func(c context.Context) (err error) {
@@ -246,6 +248,30 @@ func (r *runner) run(ctx context.Context) (res Result, err error) {
 			id = LatestSession(list.Sessions)
 			if id == "" {
 				return res, fmt.Errorf("--resume last: no sessions for %s", cwd)
+			}
+		case caps.SessionCapabilities.List != nil:
+			all, err := sessions.ListAll(context.Background(), func(_ context.Context, req acp.ListSessionsRequest) (resp acp.ListSessionsResponse, err error) {
+				err = call(func(c context.Context) (err error) {
+					resp, err = r.conn.ListSessions(c, req)
+					return err
+				})
+				return resp, err
+			}, acp.ListSessionsRequest{})
+			if err != nil {
+				return res, fmt.Errorf("list sessions: %w", err)
+			}
+			// No match falls through to loading id as given, which may be
+			// an unlisted (archived) session.
+			switch found := sessions.Find(all, id); len(found) {
+			case 1:
+				id = string(found[0].SessionId)
+			case 0:
+			default:
+				var names []string
+				for _, s := range found {
+					names = append(names, fmt.Sprintf("%s (%s)", s.SessionId, *s.Title))
+				}
+				return res, fmt.Errorf("--resume %q matches %d sessions: %s", id, len(found), strings.Join(names, ", "))
 			}
 		}
 		r.sid = acp.SessionId(id)

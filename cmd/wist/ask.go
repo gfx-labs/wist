@@ -34,7 +34,7 @@ func askCommand(cfg config.Config) *cli.Command {
 			&cli.StringFlag{Name: "towa-socket", Value: cfg.TowaSocket, Destination: &f.Socket, Usage: "connect to the towa daemon on this unix socket, starting towa serve on it when none listens"},
 			&cli.StringFlag{Name: "cwd", Destination: &f.Cwd, Usage: "working directory of the session (default: current directory)"},
 			&cli.StringFlag{Name: "log", Destination: &f.Log, Usage: "file that receives the agent's stderr (default: $XDG_STATE_HOME/wist/towa.log)"},
-			&cli.StringFlag{Name: "resume", Destination: &f.Resume, Usage: "continue the session with this id, or \"last\" for the latest one in cwd"},
+			&cli.StringFlag{Name: "resume", Destination: &f.Resume, Usage: "continue the session with this id, title or part of a title, or \"last\" for the latest one in cwd"},
 			&cli.BoolFlag{Name: "no-save", Destination: &f.NoSave, Usage: "do not keep the session (deleted after the run)"},
 			&cli.StringFlag{Name: "model", Destination: &f.Model, Usage: "model for this run (value or name of the agent's model option)"},
 			&cli.StringFlag{Name: "mode", Aliases: []string{"permission-mode"}, Destination: &f.Mode, Usage: "permission mode for this run: ask or auto"},

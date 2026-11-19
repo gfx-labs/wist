@@ -104,30 +104,28 @@ func List(ctx context.Context, o Options) ([]Session, error) {
 	default:
 		return nil, fmt.Errorf("--archived: %q is not exclude, include or only", o.Archived)
 	}
-	var out []Session
-	for {
-		var resp acp.ListSessionsResponse
-		if err := call(func(c context.Context) (err error) {
+	all, err := ListAll(ctx, func(_ context.Context, req acp.ListSessionsRequest) (resp acp.ListSessionsResponse, err error) {
+		err = call(func(c context.Context) (err error) {
 			resp, err = conn.ListSessions(c, req)
 			return err
-		}); err != nil {
-			return nil, fmt.Errorf("list sessions: %w", err)
-		}
-		for _, s := range resp.Sessions {
-			out = append(out, Session{
-				ID:        string(s.SessionId),
-				Title:     deref(s.Title),
-				Cwd:       s.Cwd,
-				UpdatedAt: deref(s.UpdatedAt),
-				Archived:  s.Archived != nil && *s.Archived,
-			})
-		}
-		if resp.NextCursor == nil {
-			slices.SortStableFunc(out, newestFirst)
-			return out, nil
-		}
-		req.Cursor = resp.NextCursor
+		})
+		return resp, err
+	}, req)
+	if err != nil {
+		return nil, fmt.Errorf("list sessions: %w", err)
 	}
+	out := make([]Session, 0, len(all))
+	for _, s := range all {
+		out = append(out, Session{
+			ID:        string(s.SessionId),
+			Title:     deref(s.Title),
+			Cwd:       s.Cwd,
+			UpdatedAt: deref(s.UpdatedAt),
+			Archived:  s.Archived != nil && *s.Archived,
+		})
+	}
+	slices.SortStableFunc(out, newestFirst)
+	return out, nil
 }
 
 // newestFirst orders sessions by update time and leaves the ones without a

@@ -35,6 +35,9 @@ type UI struct {
 	// restart makes Run replace this process with a fresh wist that
 	// resumes the session, for /reload.
 	restart bool
+	// pendingTitle titles the next session the window creates or loads:
+	// --title, or /rename before the first prompt.
+	pendingTitle string
 
 	// connection and session
 	agentName   string
@@ -95,6 +98,7 @@ type UI struct {
 	expandAll    bool
 	showThinking bool
 	planHidden   bool
+	toolOutput   toolOutputMode
 
 	// terminal
 	focused  bool
@@ -126,9 +130,13 @@ func newUI(o Options, cfg config.Config) (*UI, error) {
 		cfg:    cfg,
 		keymap: buildKeymap(cfg.Keys),
 		// Terminals without focus reporting never send events, so assume focus.
-		focused: true,
+		focused:      true,
+		pendingTitle: o.Title,
 	}
 	u.ed.SetVim(cfg.InputMode == "vim")
+	if m, ok := parseToolOutput(cfg.ToolOutput); ok {
+		u.toolOutput = m
+	}
 	if o.Theme != "" {
 		cfg.Theme = o.Theme
 	}
@@ -272,7 +280,7 @@ func (u *UI) connect(ctx context.Context, resume acp.SessionId, prompt string) {
 		}
 	})
 	if resume != "" && init.AgentCapabilities.LoadSession {
-		u.loadSession(resume)
+		u.resumeRef(string(resume))
 	} else if resume != "" {
 		u.post(func(u *UI) { u.info("the agent cannot load sessions; the first prompt starts a new one") })
 	}
@@ -324,6 +332,7 @@ func (u *UI) adoptSession(resp acp.NewSessionResponse) {
 	if resp.Modes != nil {
 		u.modeID = string(resp.Modes.CurrentModeId)
 	}
+	u.applyPendingTitle()
 }
 
 func (u *UI) loadSession(id acp.SessionId) {
@@ -336,6 +345,10 @@ func (u *UI) loadSession(id acp.SessionId) {
 	u.post(func(u *UI) {
 		if err != nil {
 			u.errorf("load session %s: %v", id, err)
+			if u.session == id {
+				// Leave no dead session behind; the next prompt starts one.
+				u.session, u.lastSession = "", ""
+			}
 			return
 		}
 		u.options = resp.ConfigOptions
@@ -343,6 +356,7 @@ func (u *UI) loadSession(id acp.SessionId) {
 			u.modeID = string(resp.Modes.CurrentModeId)
 		}
 		u.info(fmt.Sprintf("resumed session %s", id))
+		u.applyPendingTitle()
 	})
 }
 
@@ -861,65 +875,75 @@ func (u *UI) pickSession() {
 	cwd := u.opts.Cwd
 	go func() {
 		resp, err := u.conn.ListSessions(u.ctx, acp.ListSessionsRequest{Cwd: &cwd})
-		attached := u.daemonSessions(u.ctx)
-		u.post(func(u *UI) {
-			if err != nil {
-				u.errorf("list sessions: %v", err)
-				return
-			}
-			var items []pickItem
-			sessions := resp.Sessions
-			slices.SortFunc(sessions, func(a, b acp.SessionInfo) int {
-				return strings.Compare(deref(b.UpdatedAt), deref(a.UpdatedAt))
-			})
-			for _, s := range sessions {
-				label := string(s.SessionId)
-				if s.Title != nil && *s.Title != "" {
-					label = *s.Title
-				}
-				var parts []string
-				if s.UpdatedAt != nil {
-					if t, err := time.Parse(time.RFC3339Nano, *s.UpdatedAt); err == nil {
-						parts = append(parts, ago(t))
-					}
-				}
-				if n := attached[s.SessionId]; n > 1 {
-					parts = append(parts, fmt.Sprintf("connected · %d viewers", n))
-				} else if n == 1 {
-					parts = append(parts, "connected")
-				}
-				items = append(items, pickItem{label: label, detail: strings.Join(parts, " · "), value: string(s.SessionId), current: s.SessionId == u.session})
-			}
-			if len(items) == 0 {
-				u.notify("no stored sessions for " + cwd)
-				return
-			}
-			u.openPicker("resume session · ctrl+d delete · ctrl+a archive · ctrl+r rename", items, 0, func(it pickItem) {
-				if u.busy {
-					u.notify("wait for the turn to end first")
-					return
-				}
-				go u.loadSession(acp.SessionId(it.value))
-			})
-			u.picker.keys = func(ev *tcell.EventKey, it pickItem) bool {
-				id := acp.SessionId(it.value)
-				switch ev.Key() {
-				case tcell.KeyCtrlD:
-					u.picker = nil
-					u.confirmDelete(id, it.label)
-				case tcell.KeyCtrlA:
-					u.picker = nil
-					u.archiveSession(id)
-				case tcell.KeyCtrlR:
-					u.picker = nil
-					u.ed.Set("/rename --id " + it.value + " ")
-				default:
-					return false
-				}
-				return true
-			}
-		})
+		switch {
+		case err != nil:
+			u.post(func(u *UI) { u.errorf("list sessions: %v", err) })
+		case len(resp.Sessions) == 0:
+			u.post(func(u *UI) { u.notify("no stored sessions for " + cwd) })
+		default:
+			u.showSessions("resume session", resp.Sessions, false)
+		}
 	}()
+}
+
+// showSessions opens the session picker on list, newest first, showing
+// each session's directory when withCwd is set. It runs off the UI
+// goroutine because it asks the daemon which sessions are attached.
+func (u *UI) showSessions(title string, list []acp.SessionInfo, withCwd bool) {
+	attached := u.daemonSessions(u.ctx)
+	u.post(func(u *UI) {
+		var items []pickItem
+		byID := map[string]acp.SessionInfo{}
+		slices.SortFunc(list, func(a, b acp.SessionInfo) int {
+			return strings.Compare(deref(b.UpdatedAt), deref(a.UpdatedAt))
+		})
+		for _, s := range list {
+			byID[string(s.SessionId)] = s
+			label := string(s.SessionId)
+			if s.Title != nil && *s.Title != "" {
+				label = *s.Title
+			}
+			var parts []string
+			if withCwd {
+				parts = append(parts, homeRel(s.Cwd))
+			}
+			if s.UpdatedAt != nil {
+				if t, err := time.Parse(time.RFC3339Nano, *s.UpdatedAt); err == nil {
+					parts = append(parts, ago(t))
+				}
+			}
+			if n := attached[s.SessionId]; n > 1 {
+				parts = append(parts, fmt.Sprintf("connected · %d viewers", n))
+			} else if n == 1 {
+				parts = append(parts, "connected")
+			}
+			items = append(items, pickItem{label: label, detail: strings.Join(parts, " · "), value: string(s.SessionId), current: s.SessionId == u.session})
+		}
+		u.openPicker(title+" · ctrl+d delete · ctrl+a archive · ctrl+r rename", items, 0, func(it pickItem) {
+			if u.busy {
+				u.notify("wait for the turn to end first")
+				return
+			}
+			go u.attachSession(byID[it.value])
+		})
+		u.picker.keys = func(ev *tcell.EventKey, it pickItem) bool {
+			id := acp.SessionId(it.value)
+			switch ev.Key() {
+			case tcell.KeyCtrlD:
+				u.picker = nil
+				u.confirmDelete(id, it.label)
+			case tcell.KeyCtrlA:
+				u.picker = nil
+				u.archiveSession(id)
+			case tcell.KeyCtrlR:
+				u.picker = nil
+				u.ed.Set("/rename --id " + it.value + " ")
+			default:
+				return false
+			}
+			return true
+		}
+	})
 }
 
 // daemonSessions returns the viewer count of every session the daemon

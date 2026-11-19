@@ -26,8 +26,9 @@ their id, title and working directory. The listing goes through the wist
 daemon on --socket, which is started when none is running; the agent flags
 only apply to a daemon this command starts. It covers sessions of every
 working directory; --workdir narrows it to the ones whose directory matches
-a Go regular expression. Pass an id to wist --resume or wist ask --resume to
-continue one.`
+a Go regular expression, and --title to the ones whose title matches one
+(ignoring case). Pass an id or title to wist --resume or wist ask --resume
+to continue one.`
 
 func sessionsCommand(cfg config.Config) *cli.Command {
 	var (
@@ -43,12 +44,13 @@ func sessionsCommand(cfg config.Config) *cli.Command {
 	}
 	return &cli.Command{
 		Name:         "sessions",
-		Usage:        "list stored sessions, optionally filtered by working directory",
+		Usage:        "list stored sessions, optionally filtered by working directory or title",
 		UsageText:    "wist sessions [flags]",
 		Description:  sessionsHelp,
 		OnUsageError: usageError,
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "workdir", Aliases: []string{"w"}, Value: "", Usage: "only sessions whose working directory matches this regular expression"},
+			&cli.StringFlag{Name: "title", Aliases: []string{"t"}, Value: "", Usage: "only sessions whose title matches this regular expression, ignoring case"},
 			&cli.StringFlag{Name: "archived", Value: "exclude", Usage: "archived sessions to list: exclude, include or only"},
 			&cli.BoolFlag{Name: "json", Destination: &jsonOut, Usage: "print a JSON array instead of a table"},
 			&cli.DurationFlag{Name: "timeout", Value: 30 * time.Second, Destination: &timeout, Usage: "overall time limit for reaching the daemon and listing"},
@@ -59,7 +61,12 @@ func sessionsCommand(cfg config.Config) *cli.Command {
 			&cli.StringFlag{Name: "log", Destination: &dopt.Log, Usage: "file that receives the daemon's agent stderr"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			re, err := compileWorkdir(cmd.String("workdir"))
+			workdir, err := compileFilter("workdir", cmd.String("workdir"))
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "wist sessions:", err)
+				return cli.Exit("", ask.ExitUsage)
+			}
+			title, err := compileFilter("title", "(?i)"+cmd.String("title"))
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "wist sessions:", err)
 				return cli.Exit("", ask.ExitUsage)
@@ -70,20 +77,20 @@ func sessionsCommand(cfg config.Config) *cli.Command {
 				return cli.Exit("", ask.ExitUsage)
 			}
 			finishSessions(&o, &dopt, extra, cfg)
-			return cli.Exit("", runSessions(ctx, o, re, jsonOut, timeout))
+			return cli.Exit("", runSessions(ctx, o, workdir, title, jsonOut, timeout))
 		},
 	}
 }
 
-// compileWorkdir compiles the --workdir pattern; an empty pattern matches
-// every session.
-func compileWorkdir(pattern string) (*regexp.Regexp, error) {
-	if pattern == "" {
+// compileFilter compiles the pattern of the flag name; an empty pattern
+// (also "(?i)" alone) matches every session.
+func compileFilter(name, pattern string) (*regexp.Regexp, error) {
+	if pattern == "" || pattern == "(?i)" {
 		return nil, nil
 	}
 	re, err := regexp.Compile(pattern)
 	if err != nil {
-		return nil, fmt.Errorf("--workdir: %w", err)
+		return nil, fmt.Errorf("--%s: %w", name, err)
 	}
 	return re, nil
 }
@@ -121,7 +128,7 @@ func finishSessions(o *sessions.Options, dopt *tui.Options, extra string, cfg co
 
 // runSessions lists, filters and prints the sessions; it returns the exit
 // status.
-func runSessions(ctx context.Context, o sessions.Options, re *regexp.Regexp, jsonOut bool, timeout time.Duration) int {
+func runSessions(ctx context.Context, o sessions.Options, workdir, title *regexp.Regexp, jsonOut bool, timeout time.Duration) int {
 	plain := !term.IsTerminal(int(os.Stderr.Fd())) || os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb"
 	if !plain {
 		o.Progress = func(s string) { fmt.Fprintln(os.Stderr, s) }
@@ -133,7 +140,7 @@ func runSessions(ctx context.Context, o sessions.Options, re *regexp.Regexp, jso
 		fmt.Fprintln(os.Stderr, "wist sessions:", err)
 		return ask.ExitFailure
 	}
-	list = filterWorkdir(list, re)
+	list = filterSessions(list, workdir, title)
 	if jsonOut {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetEscapeHTML(false)
@@ -153,15 +160,12 @@ func runSessions(ctx context.Context, o sessions.Options, re *regexp.Regexp, jso
 	return ask.ExitOK
 }
 
-// filterWorkdir keeps the sessions whose working directory matches re; a
-// nil re keeps all of them.
-func filterWorkdir(list []sessions.Session, re *regexp.Regexp) []sessions.Session {
-	if re == nil {
-		return list
-	}
+// filterSessions keeps the sessions whose working directory matches
+// workdir and whose title matches title; a nil pattern matches all.
+func filterSessions(list []sessions.Session, workdir, title *regexp.Regexp) []sessions.Session {
 	kept := make([]sessions.Session, 0, len(list))
 	for _, s := range list {
-		if re.MatchString(s.Cwd) {
+		if (workdir == nil || workdir.MatchString(s.Cwd)) && (title == nil || title.MatchString(s.Title)) {
 			kept = append(kept, s)
 		}
 	}

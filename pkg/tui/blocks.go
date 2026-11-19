@@ -15,6 +15,52 @@ import (
 
 type blockKind int
 
+// toolOutputMode is how much of a tool call's output the transcript shows.
+// A card the user expanded always shows all of it.
+type toolOutputMode int
+
+const (
+	toolOutputPreview toolOutputMode = iota // a few lines per call
+	toolOutputHidden                        // the head line only
+	toolOutputFull                          // every line
+)
+
+func (m toolOutputMode) String() string {
+	switch m {
+	case toolOutputHidden:
+		return "hidden"
+	case toolOutputFull:
+		return "full"
+	}
+	return "preview"
+}
+
+// next is the order the tool_output key and command cycle through.
+func (m toolOutputMode) next() toolOutputMode {
+	switch m {
+	case toolOutputHidden:
+		return toolOutputPreview
+	case toolOutputPreview:
+		return toolOutputFull
+	}
+	return toolOutputHidden
+}
+
+// parseToolOutput reads a tool_output value, empty meaning the default.
+func parseToolOutput(s string) (toolOutputMode, bool) {
+	switch s {
+	case "":
+		return toolOutputPreview, true
+	case "hidden":
+		return toolOutputHidden, true
+	case "preview":
+		return toolOutputPreview, true
+	case "full":
+		return toolOutputFull, true
+	}
+	return toolOutputPreview, false
+}
+
 const (
 	kindUser blockKind = iota
 	kindAgent
@@ -48,6 +94,7 @@ type block struct {
 
 	cacheW     int
 	cacheExp   bool
+	cacheMode  toolOutputMode
 	cacheLines []render.Line
 	codes      []render.CodeRef // fenced code blocks of an agent message, by rendered line
 }
@@ -55,10 +102,11 @@ type block struct {
 func (b *block) dirty() { b.cacheW = -1 }
 
 // lines renders the block for width. showThinking and expandAll are UI
-// toggles that change how thoughts and tool output are shown.
-func (b *block) lines(width int, expandAll bool, showThinking bool) []render.Line {
+// toggles that change how thoughts and tool output are shown; mode sets
+// how much of a tool call's body is drawn.
+func (b *block) lines(width int, expandAll bool, showThinking bool, mode toolOutputMode) []render.Line {
 	exp := b.expanded || expandAll
-	if b.cacheW == width && b.cacheExp == exp && b.kind != kindThought && b.status != acp.ToolCallStatusInProgress {
+	if b.cacheW == width && b.cacheExp == exp && b.cacheMode == mode && b.kind != kindThought && b.status != acp.ToolCallStatusInProgress {
 		return b.cacheLines
 	}
 	var out []render.Line
@@ -93,7 +141,7 @@ func (b *block) lines(width int, expandAll bool, showThinking bool) []render.Lin
 			}
 		}
 	case kindTool:
-		out = b.toolLines(width, exp)
+		out = b.toolLines(width, exp, mode)
 	case kindNotice:
 		out = render.Wrap([]render.Span{{Text: render.Clean(b.text), St: render.StYellow}}, width, render.Line{{Text: "⚑ ", St: render.StYellow}}, render.Line{{Text: "  ", St: render.StYellow}})
 	case kindError:
@@ -109,7 +157,7 @@ func (b *block) lines(width int, expandAll bool, showThinking bool) []render.Lin
 	case kindCompaction:
 		out = render.Wrap([]render.Span{{Text: render.Clean(b.text), St: render.StCyan}}, width, render.Line{{Text: "⇣ ", St: render.StCyan}}, render.Line{{Text: "  ", St: render.StCyan}})
 	}
-	b.cacheW, b.cacheExp, b.cacheLines = width, exp, out
+	b.cacheW, b.cacheExp, b.cacheMode, b.cacheLines = width, exp, mode, out
 	return out
 }
 
@@ -141,7 +189,7 @@ func spinner() string {
 	return spinnerFrames[int(time.Now().UnixMilli()/80)%len(spinnerFrames)]
 }
 
-func (b *block) toolLines(width int, exp bool) []render.Line {
+func (b *block) toolLines(width int, exp bool, mode toolOutputMode) []render.Line {
 	var mark render.Span
 	switch b.status {
 	case acp.ToolCallStatusCompleted:
@@ -188,13 +236,19 @@ func (b *block) toolLines(width int, exp bool) []render.Line {
 	}
 	head = append(head, render.Span{Text: dur, St: render.StFaint})
 	out := []render.Line{head}
+	if exp {
+		mode = toolOutputFull
+	}
+	if mode == toolOutputHidden {
+		return out
+	}
 
 	body := b.bodyLines(width - 4)
 	limit := 6
 	if b.status == acp.ToolCallStatusFailed {
 		limit = 12
 	}
-	if exp {
+	if mode == toolOutputFull {
 		limit = len(body)
 	}
 	gutter := render.Line{{Text: "  │ ", St: render.StFaint}}

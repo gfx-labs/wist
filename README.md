@@ -8,6 +8,8 @@ wist windows talk the Agent Client Protocol, using [go-acp](https://github.com/g
 go install github.com/gfx-labs/wist/cmd/wist@latest
 wist                                  # a new session, created by the first prompt
 wist --resume <session-id>            # load a stored session
+wist --resume 'fix the parser'        # ... or find it by title (see sessions below)
+wist --title 'fix the parser'         # title the session this window starts
 wist -p "fix the failing test"        # send a first prompt right away
 wist -- --models=codex:pro/gpt-6.2-sol   # anything after -- goes to towa
 wist ask "explain this repository"    # one prompt, no UI (see below)
@@ -21,7 +23,7 @@ wist --help                           # all flags; wist ask --help for ask
 
 The first wist window starts the daemon in the background, and later windows connect to it. The daemon runs one agent process and serves ACP on a unix socket: `--socket`, else `$WIST_SOCKET`, else `$XDG_RUNTIME_DIR/wist/daemon.sock`. Pass `--socket` or set `WIST_SOCKET` to run a separate daemon.
 
-- A turn keeps running when the window that started it closes. `wist --resume <id>` attaches again.
+- A turn keeps running when the window that started it closes. `wist --resume <id or title>` attaches again.
 - Several windows can open one session. Each one sees the others' prompts and output, prompts run in the order they arrive, and a permission request goes to every window, where the first answer wins.
 - Every session's updates are stored in SQLite (`$XDG_STATE_HOME/wist/daemon.db`), so attaching replays from the daemon instead of from the agent. Messages are indexed for full text search.
 - The agent flags (`--towa`, `--agent`, `--towa-args`, args after `--`) take effect only when they start the daemon. A window that finds a daemon already running uses its agent and says so. Run `wist daemon stop` to restart with other flags.
@@ -35,13 +37,23 @@ The first wist window starts the daemon in the background, and later windows con
 ```sh
 wist sessions                              # table: updated, id, title, workdir
 wist sessions -w '/gfx-labs/(wist|towa)$'  # only matching working directories
+wist sessions -t parser                    # only titles matching, ignoring case
 wist sessions --json | jq -r '.[].session_id'
 wist sessions --archived only              # archived sessions only
 ```
 
-`--workdir`/`-w` takes a Go regular expression matched against the session's working directory, unanchored, so `-w wist` matches any path containing `wist`. `--archived` is `exclude` (default), `include` or `only` and needs an agent that advertises the archive capability. `--json` prints `session_id`, `cwd`, `updated_at`, `title` and `archived` fields. `--towa`, `--agent`, `--towa-args` and `--log` describe the daemon's agent, like the other commands, and only apply to a daemon this call starts. `--timeout` (default 30s) bounds the whole listing.
+`--workdir`/`-w` takes a Go regular expression matched against the session's working directory, unanchored, so `-w wist` matches any path containing `wist`. `--title`/`-t` does the same for the title, ignoring case. `--archived` is `exclude` (default), `include` or `only` and needs an agent that advertises the archive capability. `--json` prints `session_id`, `cwd`, `updated_at`, `title` and `archived` fields. `--towa`, `--agent`, `--towa-args` and `--log` describe the daemon's agent, like the other commands, and only apply to a daemon this call starts. `--timeout` (default 30s) bounds the whole listing.
 
 Exit status: `0` listing succeeded (also when nothing matched), `1` the daemon or its agent failed, `2` a bad flag, regular expression or `--archived` value.
+
+## session titles
+
+A session's title is stored by the agent (towa's `session/set_title`) and mirrored in the daemon's database, so every window, `wist sessions` and `_wist/sessions` see it.
+
+- Set it with `wist --title <title>` or `/rename <title>`. Before the first prompt, both name the session that prompt creates. The session picker's `ctrl+r` renames any listed session.
+- `wist --resume <ref>`, `/resume <ref>` and `wist ask --resume <ref>` take a session id, a whole title or part of a title, in any working directory. Titles match ignoring case: an id wins, then a whole title, then titles that contain the text. When several sessions match, the window opens a picker of them, showing their directories, and `wist ask` fails and lists them. A window that resumes a session from another directory moves to that directory unless `--cwd` was given.
+- `wist sessions -t <regexp>` filters the listing by title, and the session picker (`ctrl+s`) filters on titles as you type.
+- Nothing titles a session automatically: towa does not generate titles, and wist leaves untitled sessions untitled.
 
 ## wist ask
 
@@ -54,6 +66,7 @@ git diff | wist ask "review this change"          # args, a blank line, then std
 wist ask -- "-v means what in towa?"              # everything after -- is prompt text
 wist ask --image ./ui.png "describe this interface"   # repeat --image for more
 wist ask --resume last "now add tests"            # continue the latest session in cwd
+wist ask --resume "fix the parser" "add a test"   # continue a session found by title
 wist ask --model codex:pro/gpt-6.2-sol --auto "fix the failing test"
 wist ask --json "what is 2+2" | jq -r .final_output
 ```
@@ -78,14 +91,14 @@ stdout receives the assistant's raw markdown as it streams. stderr receives prog
 
 Exit status: `0` when the turn ends with `end_turn`; `1` for any failure (agent error, agent exit, `--timeout`, or any other stop reason such as `refusal`, `max_tokens` or `cancelled`); `2` for usage mistakes (unknown flag, empty prompt, `--no-save` with `--resume`, a bad `--model`/`--mode` value, an unreadable `--image`). Ctrl+C sends `session/cancel`, waits briefly and exits `130` (`143` on SIGTERM); an interrupted `--json` run writes no result.
 
-Flags: `--resume <id|last>`, `--no-save` (deletes the session after the run via `session/delete`; if the agent cannot delete sessions it is kept and a note goes to stderr), `--model <value>` (a value, name, or unique suffix of the agent's model option; a wrong value lists the choices), `--mode`/`--permission-mode ask|auto` with `--ask`/`--auto` shorthands, `--image <path>`, `--system <text>` (replaces the system prompt; needs the agent's `systemPrompt.mode.override` capability), `--timeout <dur>` (overall wall clock), `--cwd`, `--agent`, `--towa`, `--towa-args`, `--log`.
+Flags: `--resume <id|title|last>` (a title resolves as in [session titles](#session-titles); several matches are an error that lists them), `--no-save` (deletes the session after the run via `session/delete`; if the agent cannot delete sessions it is kept and a note goes to stderr), `--model <value>` (a value, name, or unique suffix of the agent's model option; a wrong value lists the choices), `--mode`/`--permission-mode ask|auto` with `--ask`/`--auto` shorthands, `--image <path>`, `--system <text>` (replaces the system prompt; needs the agent's `systemPrompt.mode.override` capability), `--timeout <dur>` (overall wall clock), `--cwd`, `--agent`, `--towa`, `--towa-args`, `--log`.
 
 Permissions: when the agent asks (for example in `--ask` mode) and both stdin and stderr are a terminal without `--json`/`--quiet`, wist prompts on stderr and reads the answer from `/dev/tty` (`y`, `a`, `n` or an option number). `--prompt-permissions` allows that prompt with `--json`/`--quiet`. Otherwise the request is rejected (the agent's reject-once option) and stderr says so. Agent stderr goes to the same log as the UI.
 
 ## features
 
 - streaming markdown: headings, lists, task lists, quotes, tables, inline styles, and fenced code with syntax highlighting
-- tool cards that show a status spinner, kind icon, duration and a collapsible output preview. `ctrl+o` expands the last card, `alt+e` expands all of them
+- tool cards that show a status spinner, kind icon, duration and a collapsible output preview. `ctrl+o` expands the last card, `alt+e` expands all of them. `alt+o` or `/output hidden|preview|full` sets how much output cards show: `hidden` keeps only the head line (status, title, path, duration), for a compact transcript. `tool_output:` in the config sets the default, and `alt+i` still shows the last tool's full output in the side panel
 - edits shown as colored line diffs with context and +/- counts
 - collapsed reasoning (`ctrl+t` shows it in full)
 - a plan panel: a sidebar on wide terminals, inline on narrow ones (`alt+p`)
@@ -115,6 +128,7 @@ Permissions: when the agent asks (for example in `--ask` mode) and both stdin an
   spawn_hook: "tmux split-window -h {cmd}"
   notify: auto
   input_mode: vim   # or emacs (default)
+  tool_output: hidden   # or preview (default) or full
   theme:
     preset: xresources
     accent: "#7aa2f7"
