@@ -1,8 +1,10 @@
 // Package editor is the multi-line prompt editor: a rune buffer with emacs
-// style motions, a one entry kill ring and prompt history.
+// style motions, an optional vim mode (vim.go), a one entry kill ring and
+// prompt history.
 package editor
 
 import (
+	"slices"
 	"strings"
 	"unicode"
 
@@ -18,6 +20,11 @@ type Editor struct {
 	Hist   []string // submitted prompts, oldest first
 	histAt int      // len(hist) when not browsing
 	draft  string   // what was typed before browsing history
+
+	// killLines marks a kill from a vim linewise command, which p pastes
+	// as whole lines.
+	killLines bool
+	vim       vimState
 }
 
 // Text returns the buffer as a string.
@@ -34,6 +41,11 @@ func (e *Editor) Clear() {
 	e.Buf = e.Buf[:0]
 	e.Cur = 0
 	e.histAt = len(e.Hist)
+	if v := &e.vim; v.mode != ModeOff {
+		// A new prompt starts in insert mode, as in a shell's vi mode.
+		v.pending, v.undo, v.redo, v.change = nil, nil, nil, nil
+		e.startInsert()
+	}
 }
 
 // Insert inserts s at the cursor.
@@ -123,6 +135,7 @@ func (e *Editor) Cut(a, b int) {
 		return
 	}
 	e.kill = append([]rune{}, e.Buf[a:b]...)
+	e.killLines = false
 	e.Buf = append(e.Buf[:a], e.Buf[b:]...)
 	e.Cur = a
 }
@@ -198,16 +211,29 @@ func (e *Editor) Remember(s string) {
 // Layout wraps the buffer to width and returns the visual rows and the
 // cursor's row and column.
 func (e *Editor) Layout(width int) (rows []string, cy, cx int) {
+	rows, pos := e.LayoutMarks(width, e.Cur)
+	return rows, pos[0][0], pos[0][1]
+}
+
+// LayoutMarks wraps the buffer to width and returns the visual rows and
+// the row and column of each buffer index in marks.
+func (e *Editor) LayoutMarks(width int, marks ...int) (rows []string, pos [][2]int) {
 	if width < 2 {
 		width = 2
 	}
 	var row strings.Builder
 	rowW := 0
-	cy, cx = -1, 0
-	for i, r := range e.Buf {
-		if i == e.Cur {
-			cy, cx = len(rows), rowW
+	pos = make([][2]int, len(marks))
+	placed := make([]bool, len(marks))
+	mark := func(i int, wrapped bool) {
+		for k, m := range marks {
+			if m == i && (!placed[k] || wrapped) {
+				pos[k], placed[k] = [2]int{len(rows), rowW}, true
+			}
 		}
+	}
+	for i, r := range e.Buf {
+		mark(i, false)
 		if r == '\n' {
 			rows = append(rows, row.String())
 			row.Reset()
@@ -219,21 +245,23 @@ func (e *Editor) Layout(width int) (rows []string, cy, cx int) {
 			rows = append(rows, row.String())
 			row.Reset()
 			rowW = 0
-			if i == e.Cur {
-				cy, cx = len(rows), 0
-			}
+			mark(i, true)
 		}
 		row.WriteRune(r)
 		rowW += w
 	}
-	if cy < 0 {
+	if slices.Contains(placed, false) {
 		if rowW >= width {
 			rows = append(rows, row.String())
 			row.Reset()
 			rowW = 0
 		}
-		cy, cx = len(rows), rowW
+		for k := range marks {
+			if !placed[k] {
+				pos[k] = [2]int{len(rows), rowW}
+			}
+		}
 	}
 	rows = append(rows, row.String())
-	return rows, cy, cx
+	return rows, pos
 }

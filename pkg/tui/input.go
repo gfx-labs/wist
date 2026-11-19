@@ -12,6 +12,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	acp "github.com/gfx-labs/go-acp"
+	"github.com/gfx-labs/wist/pkg/editor"
 )
 
 // --- picker -------------------------------------------------------------
@@ -169,16 +170,24 @@ var localCommands = []localCmd{
 	{"paste", "paste text from the terminal clipboard (OSC 52)"},
 	{"suspend", "suspend wist to the shell (fg resumes)"},
 	{"keys", "list key bindings"},
+	{"vim", "toggle vim keys in the input"},
 	{"agents", "pick an agent from the ACP registry"},
 	{"cwd", "show the working directory"},
 	{"info", "show session details"},
 	{"log", "show where towa's log is"},
-	{"reload", "restart the agent and reload its config"},
+	{"reload", "restart this window, picking up a new wist binary and config"},
+	{"reload-agent", "restart the agent and reload its config"},
 	{"quit", "exit"},
 }
 
 func (u *UI) updateCompletion() {
 	u.comp = nil
+	// This runs after every edit, so it also keeps the vim normal mode
+	// cursor on a character. Normal mode has no completion.
+	if u.ed.Mode() >= editor.ModeNormal {
+		u.ed.VimClamp()
+		return
+	}
 	buf := u.ed.Buf[:u.ed.Cur]
 	start := len(buf)
 	for start > 0 && buf[start-1] != ' ' && buf[start-1] != '\n' {
@@ -342,6 +351,11 @@ func (u *UI) handleKey(ev *tcell.EventKey) {
 		return
 	}
 
+	if u.ed.Mode() != editor.ModeOff && u.vimKey(ev) {
+		u.updateCompletion()
+		return
+	}
+
 	mod := ev.Modifiers()
 	if u.comp != nil && u.comp.sel >= len(u.comp.items) {
 		u.comp = nil
@@ -455,6 +469,36 @@ func (u *UI) handleKey(ev *tcell.EventKey) {
 	u.updateCompletion()
 }
 
+// vimKey handles the keys vim mode takes over and reports whether it did.
+// Keys it leaves, such as enter, arrows and ctrl keys, work as in emacs
+// mode.
+func (u *UI) vimKey(ev *tcell.EventKey) bool {
+	ed := &u.ed
+	if ed.Mode() == editor.ModeInsert {
+		return ev.Key() == tcell.KeyEscape && ed.VimEscape()
+	}
+	if eventKey(ev) == "ctrl+r" {
+		ed.VimRedo()
+		return true
+	}
+	switch ev.Key() {
+	case tcell.KeyEscape:
+		// With nothing to cancel, esc falls through to interrupt.
+		return ed.VimEscape()
+	case tcell.KeyRune:
+		if ev.Modifiers()&(tcell.ModCtrl|tcell.ModAlt) == 0 {
+			ed.VimKey(ev.Rune())
+			return true
+		}
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		if ev.Modifiers() == 0 {
+			ed.VimKey('h')
+			return true
+		}
+	}
+	return false
+}
+
 func (u *UI) ctrlCAction() {
 	switch {
 	case u.busy:
@@ -561,7 +605,7 @@ func (u *UI) localCommand(text string) bool {
 		m := u.modelOption()
 		switch {
 		case m == nil:
-			u.notify("towa offers no model option")
+			u.noOption("model")
 		case arg != "":
 			u.setOption(m.Id, acp.SessionConfigValueId(arg))
 		default:
@@ -571,7 +615,7 @@ func (u *UI) localCommand(text string) bool {
 		m := u.modeOption()
 		switch {
 		case m == nil:
-			u.notify("towa offers no mode option")
+			u.noOption("mode")
 		case arg != "":
 			u.setOption(m.Id, acp.SessionConfigValueId(arg))
 		default:
@@ -647,6 +691,10 @@ func (u *UI) localCommand(text string) bool {
 		}
 	case "keys", "keybindings":
 		u.addBlock(&block{kind: kindAgent, text: u.keysText()})
+	case "vim":
+		on := u.ed.Mode() == editor.ModeOff
+		u.ed.SetVim(on)
+		u.notify(fmt.Sprintf("vim keys: %v", on))
 	case "agents", "agent":
 		u.pickAgent()
 	case "cwd":
@@ -656,6 +704,8 @@ func (u *UI) localCommand(text string) bool {
 	case "log":
 		u.info("towa stderr goes to " + u.opts.Log)
 	case "reload":
+		u.reloadWindow()
+	case "reload-agent":
 		u.reloadAgent()
 	case "quit", "exit", "q":
 		u.quit = true
@@ -714,6 +764,7 @@ func helpText(u *UI) string {
 		{"up/down, ctrl+p/n", "history"},
 		{"wheel", "scroll"},
 		{"ctrl+w/u/k/y", "kill word/line, yank"},
+		{"/vim", "vim keys: esc for normal mode, i/a/o to insert, u and ctrl+r undo and redo"},
 		{"@path", "attach a file"},
 		{"session picker", "ctrl+d delete, ctrl+a archive, ctrl+r rename"},
 	} {

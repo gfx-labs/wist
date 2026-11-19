@@ -9,6 +9,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	acp "github.com/gfx-labs/go-acp"
+	"github.com/gfx-labs/wist/pkg/editor"
 	"github.com/gfx-labs/wist/pkg/render"
 	"github.com/rivo/uniseg"
 )
@@ -35,7 +36,14 @@ func (u *UI) draw() {
 	}
 
 	inputW := w - 4
-	rows, cy, cx := u.ed.Layout(inputW)
+	marks := []int{u.ed.Cur}
+	selA, selB, sel := u.ed.Selection()
+	if sel {
+		marks = append(marks, selA, selB)
+	}
+	all, pos := u.ed.LayoutMarks(inputW, marks...)
+	cy, cx := pos[0][0], pos[0][1]
+	rows := all
 	maxRows := max(3, h/3)
 	first := 0
 	if len(rows) > maxRows {
@@ -44,6 +52,9 @@ func (u *UI) draw() {
 	}
 	inputTop := y - len(rows) // border line
 	u.drawInput(inputTop, w, rows)
+	if sel {
+		u.drawSelection(inputTop+1-first, inputTop+1, inputTop+len(rows), w, all, pos[1], pos[2])
+	}
 	if u.picker == nil {
 		u.cursorTint()
 		sc.ShowCursor(2+cx, inputTop+1+cy-first)
@@ -124,7 +135,7 @@ func (u *UI) drawHeader(w int) {
 	title := u.title
 	if title == "" {
 		title = "new session"
-		if u.session == "" {
+		if !u.connected {
 			title = "connecting…"
 		}
 	}
@@ -292,6 +303,8 @@ func (u *UI) drawInput(top, w int, rows []string) {
 		border, label = render.StYellow, " permission needed "
 	case u.urgent:
 		border, label = render.StYellow, " interrupting… "
+	case u.busy && u.ed.Mode() == editor.ModeInsert:
+		border, label = render.StAccent, " enter queues · ctrl+c interrupts "
 	case u.busy:
 		border, label = render.StAccent, " enter queues · esc interrupts "
 	}
@@ -306,13 +319,24 @@ func (u *UI) drawInput(top, w int, rows []string) {
 	if label != "" {
 		render.DrawStr(sc, 2, top, w-2, label, border)
 	}
+	right := w - 2
 	if mode := currentName(u.modeOption()); mode != "" {
 		tag := " " + strings.ToLower(mode) + " "
 		st := render.StDim
 		if strings.EqualFold(mode, "auto") {
 			st = render.StYellow
 		}
-		render.DrawStr(sc, w-uniseg.StringWidth(tag)-2, top, w-1, tag, st)
+		right -= uniseg.StringWidth(tag)
+		render.DrawStr(sc, right, top, w-1, tag, st)
+	}
+	if m := u.ed.Mode(); m != editor.ModeOff {
+		tag := " " + strings.TrimSpace(m.String()+" "+u.ed.Pending()) + " "
+		st := map[editor.Mode]tcell.Style{editor.ModeInsert: render.StFaint, editor.ModeNormal: render.StAccent}[m]
+		if m >= editor.ModeVisual {
+			st = render.StYellow
+		}
+		right -= uniseg.StringWidth(tag)
+		render.DrawStr(sc, right, top, w-1, tag, st)
 	}
 	for i, r := range rows {
 		y := top + 1 + i
@@ -329,6 +353,32 @@ func (u *UI) drawInput(top, w int, rows []string) {
 			hint = "type to queue a follow-up…"
 		}
 		render.DrawStr(sc, 2, top+1, w-1, hint, render.StFaint.Italic(true))
+	}
+}
+
+// drawSelection shades the vim visual selection, which runs from input
+// row and column a to b. y0 is the screen row of input row 0; rows outside
+// minY..maxY are scrolled away.
+func (u *UI) drawSelection(y0, minY, maxY, w int, rows []string, a, b [2]int) {
+	for r := a[0]; r <= b[0] && r < len(rows); r++ {
+		y := y0 + r
+		if y < minY || y > maxY {
+			continue
+		}
+		x0, x1 := 0, uniseg.StringWidth(rows[r])+1 // +1 shades the line break
+		if r == a[0] {
+			x0 = a[1]
+		}
+		if r == b[0] {
+			x1 = b[1]
+		}
+		if r == a[0] && x1 <= x0 {
+			x1 = x0 + 1 // an empty line
+		}
+		for x := 2 + x0; x < 2+x1 && x < w-1; x++ {
+			ch, comb, st, _ := u.sc.GetContent(x, y)
+			u.sc.SetContent(x, y, ch, comb, st.Background(render.CSelBg))
+		}
 	}
 }
 

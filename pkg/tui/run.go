@@ -29,7 +29,7 @@ type Options struct {
 	Cwd        string // session working directory
 	Resume     string // session id to load instead of starting a new one
 	Log        string // file that receives the agent's stderr
-	Prompt     string // prompt sent as soon as the session is ready
+	Prompt     string // prompt sent as soon as the window is ready
 	NoMouse    bool   // leave the mouse to the terminal
 	Theme      string // theme preset overriding the config
 }
@@ -92,6 +92,9 @@ func Run(o Options, cfg config.Config) error {
 
 	runErr := ui.loop()
 	cancel()
+	if ui.restart && runErr == nil {
+		runErr = ui.reexec()
+	}
 	if ui.lastSession != "" {
 		fmt.Printf("session %s\nresume with: wist --resume %s\n", ui.lastSession, ui.lastSession)
 	}

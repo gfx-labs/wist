@@ -50,7 +50,7 @@ func rootCommand(cfg config.Config) *cli.Command {
 			&cli.StringFlag{Name: "cwd", Local: true, Destination: &o.Cwd, Usage: "working directory of the session (default: current directory)"},
 			&cli.StringFlag{Name: "resume", Local: true, Destination: &o.Resume, Usage: "load the session with this id instead of starting a new one"},
 			&cli.StringFlag{Name: "log", Local: true, Destination: &o.Log, Usage: "file that receives towa's stderr (default: $XDG_STATE_HOME/wist/towa.log)"},
-			&cli.StringFlag{Name: "p", Local: true, Destination: &o.Prompt, Usage: "send this prompt as soon as the session is ready"},
+			&cli.StringFlag{Name: "p", Local: true, Destination: &o.Prompt, Usage: "send this prompt as soon as the window is ready, starting the session"},
 			&cli.StringFlag{Name: "theme", Local: true, Destination: &o.Theme, Usage: "color theme preset (e.g. dark, terminal, xresources)"},
 			&cli.BoolFlag{Name: "no-mouse", Local: true, Destination: &o.NoMouse, Usage: "do not capture the mouse (keeps the terminal's own selection)"},
 			socketFlag(&o.Socket),

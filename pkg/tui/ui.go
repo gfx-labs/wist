@@ -32,10 +32,14 @@ type UI struct {
 	// is picked up. run sets it; nil means reload is unavailable.
 	reload    func(acp.SessionId)
 	reloading bool
+	// restart makes Run replace this process with a fresh wist that
+	// resumes the session, for /reload.
+	restart bool
 
 	// connection and session
 	agentName   string
 	canLoad     bool
+	connected   bool // initialize finished
 	session     acp.SessionId
 	lastSession string
 	title       string
@@ -124,6 +128,7 @@ func newUI(o Options, cfg config.Config) (*UI, error) {
 		// Terminals without focus reporting never send events, so assume focus.
 		focused: true,
 	}
+	u.ed.SetVim(cfg.InputMode == "vim")
 	if o.Theme != "" {
 		cfg.Theme = o.Theme
 	}
@@ -259,6 +264,7 @@ func (u *UI) connect(ctx context.Context, resume acp.SessionId, prompt string) {
 		return
 	}
 	u.post(func(u *UI) {
+		u.connected = true
 		u.canLoad = init.AgentCapabilities.LoadSession
 		u.imagesOK = init.AgentCapabilities.PromptCapabilities.Image
 		if init.AgentInfo != nil {
@@ -267,12 +273,11 @@ func (u *UI) connect(ctx context.Context, resume acp.SessionId, prompt string) {
 	})
 	if resume != "" && init.AgentCapabilities.LoadSession {
 		u.loadSession(resume)
-	} else {
-		if resume != "" {
-			u.post(func(u *UI) { u.info("the agent cannot load sessions; started a new one") })
-		}
-		u.newSession()
+	} else if resume != "" {
+		u.post(func(u *UI) { u.info("the agent cannot load sessions; the first prompt starts a new one") })
 	}
+	// Without a resume the window starts no session until it needs one, so
+	// opening and quitting wist stores nothing.
 	if prompt != "" {
 		u.post(func(u *UI) { u.submit(prompt) })
 	}
@@ -287,6 +292,8 @@ func (u *UI) reloadAgent() {
 		u.notify("reload is not available")
 	case u.busy:
 		u.notify("wait for the turn to end first")
+	case u.session == "":
+		u.notify("no session yet")
 	case u.reloading:
 		u.notify("already reloading")
 	default:
@@ -304,13 +311,19 @@ func (u *UI) newSession() {
 			u.errorf("new session: %v", err)
 			return
 		}
-		u.resetSession(resp.SessionId)
-		u.options = resp.ConfigOptions
-		if resp.Modes != nil {
-			u.modeID = string(resp.Modes.CurrentModeId)
-		}
+		u.adoptSession(resp)
 		u.info(fmt.Sprintf("new session %s in %s", resp.SessionId, u.opts.Cwd))
 	})
+}
+
+// adoptSession switches to a freshly created session and takes its
+// config options.
+func (u *UI) adoptSession(resp acp.NewSessionResponse) {
+	u.resetSession(resp.SessionId)
+	u.options = resp.ConfigOptions
+	if resp.Modes != nil {
+		u.modeID = string(resp.Modes.CurrentModeId)
+	}
 }
 
 func (u *UI) loadSession(id acp.SessionId) {
@@ -512,10 +525,6 @@ func (u *UI) submit(text string) {
 	if strings.HasPrefix(text, "/") && u.localCommand(text) {
 		return
 	}
-	if u.session == "" {
-		u.errorf("no session yet")
-		return
-	}
 	if u.busy {
 		u.queue = append(u.queue, text)
 		u.addBlock(&block{kind: kindUser, text: text, queued: true})
@@ -525,17 +534,52 @@ func (u *UI) submit(text string) {
 	for _, a := range u.images {
 		shown += "\n" + u.storeAttachment(a)
 	}
+	if u.session == "" {
+		// Adopting the new session resets the transcript, so the prompt
+		// line goes in once the session exists.
+		u.newSessionTurn(text, shown)
+		return
+	}
 	u.addBlock(&block{kind: kindUser, text: shown})
 	u.startTurn(text)
 }
 
 func (u *UI) startTurn(text string) {
+	if u.session == "" {
+		u.errorf("no session yet")
+		return
+	}
+	u.busy = true
+	u.turnStart = time.Now()
+	u.scroll = 0
+	u.lastStop = ""
+	u.sendPrompt(u.session, u.promptBlocks(text))
+}
+
+// newSessionTurn creates the session this window starts with and sends the
+// prompt that started it.
+func (u *UI) newSessionTurn(text, shown string) {
 	u.busy = true
 	u.turnStart = time.Now()
 	u.scroll = 0
 	u.lastStop = ""
 	prompt := u.promptBlocks(text)
-	id := u.session
+	go func() {
+		resp, err := u.conn.NewSession(u.ctx, acp.NewSessionRequest{Cwd: u.opts.Cwd, McpServers: []acp.McpServer{}})
+		u.post(func(u *UI) {
+			if err != nil {
+				u.busy = false
+				u.errorf("new session: %v", err)
+				return
+			}
+			u.adoptSession(resp)
+			u.addBlock(&block{kind: kindUser, text: shown})
+			u.sendPrompt(resp.SessionId, prompt)
+		})
+	}()
+}
+
+func (u *UI) sendPrompt(id acp.SessionId, prompt []acp.ContentBlock) {
 	go func() {
 		resp, err := u.conn.Prompt(u.ctx, acp.PromptRequest{SessionId: id, Prompt: prompt})
 		u.post(func(u *UI) { u.endTurn(id, resp, err) })
@@ -609,7 +653,8 @@ func (u *UI) endTurn(id acp.SessionId, resp acp.PromptResponse, err error) {
 }
 
 func (u *UI) cancelTurn() {
-	if !u.busy {
+	if !u.busy || u.session == "" {
+		// With no session yet the first prompt is still creating it.
 		return
 	}
 	id := u.session
@@ -741,10 +786,21 @@ func (u *UI) setBool(id acp.SessionConfigId, value bool) {
 	}()
 }
 
+// noOption reports that an option is unavailable. A window without a
+// session has no options yet, because the agent sends them with the
+// session the first prompt creates.
+func (u *UI) noOption(what string) {
+	if u.session == "" {
+		u.notify("the " + what + " is picked once the first prompt starts the session")
+		return
+	}
+	u.notify("the agent offers no " + what + " option")
+}
+
 func (u *UI) cycleMode() {
 	m := u.modeOption()
 	if m == nil {
-		u.notify("this agent has no modes")
+		u.noOption("mode")
 		return
 	}
 	choices := selectChoices(m)

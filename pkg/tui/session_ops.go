@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"syscall"
 
 	acp "github.com/gfx-labs/go-acp"
 )
@@ -273,6 +274,43 @@ func (u *UI) spawnPane(args []string) error {
 }
 
 func (u *UI) canSpawn() bool { return u.cfg.SpawnHook != "" || os.Getenv("TMUX") != "" }
+
+// --- /reload ------------------------------------------------------------
+
+// reloadWindow quits the loop so Run can restart this window with reexec.
+// A running turn keeps going in the daemon and is attached again.
+func (u *UI) reloadWindow() {
+	if len(u.queue) > 0 {
+		u.notify("queued prompts would be lost; wait for the turn to end first")
+		return
+	}
+	u.restart, u.quit = true, true
+}
+
+// reexec replaces this process with a fresh wist that resumes the
+// session, so a newly installed binary and the current config take
+// effect. It returns only on failure.
+func (u *UI) reexec() error {
+	var extra []string
+	if u.session != "" {
+		extra = append(extra, "--resume", string(u.session))
+	}
+	if u.opts.Theme != "" {
+		extra = append(extra, "--theme", u.opts.Theme)
+	}
+	// Look the binary up by name again: after an install replaced it,
+	// os.Executable still names the old, deleted file.
+	self, err := exec.LookPath(os.Args[0])
+	if err != nil {
+		if self, err = os.Executable(); err != nil {
+			return err
+		}
+	}
+	if err := syscall.Exec(self, append([]string{os.Args[0]}, u.childArgs(extra...)...), os.Environ()); err != nil {
+		return fmt.Errorf("reload %s: %w", self, err)
+	}
+	return nil
+}
 
 // btw asks a side question in a fork of the session, so the main session
 // is left alone. With tmux (or a spawn_hook) the fork opens in a new pane;

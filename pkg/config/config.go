@@ -18,6 +18,7 @@ import (
 //	towa_socket: /run/user/1000/towa.sock  # connect to a towa daemon, starting it when absent
 //	agent: towa              # or a registry id such as gemini
 //	spawn_hook: "tmux split-window -h {cmd}"
+//	input_mode: vim         # or emacs (default)
 //	theme:
 //	  preset: tokyonight     # or theme: tokyonight
 //	  accent: "#7aa2f7"
@@ -32,6 +33,7 @@ type Config struct {
 	SpawnHook  string              // shell command that opens {cmd} in a new pane
 	Theme      string              // theme preset name
 	Notify     string              // auto, off, desktop or terminal
+	InputMode  string              // emacs or vim
 	Colors     map[string]string   // theme color overrides
 	Keys       map[string][]string // key bindings by action name
 	Warnings   []string            // problems found while loading
@@ -161,6 +163,12 @@ func parse(b []byte) (Config, error) {
 				c.Notify = one
 			} else {
 				warn(v, "notify must be auto, off, desktop or terminal")
+			}
+		case "input_mode":
+			if one == "emacs" || one == "vim" {
+				c.InputMode = one
+			} else {
+				warn(v, "input_mode must be emacs or vim")
 			}
 		default:
 			warn(kn, "unknown key %q", k)

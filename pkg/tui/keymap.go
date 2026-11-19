@@ -59,6 +59,8 @@ func init() {
 		{"model_picker", "pick the model", []string{"ctrl+g", "alt+m"}, func(u *UI) {
 			if m := u.modelOption(); m != nil {
 				u.pickOption(m)
+			} else {
+				u.noOption("model")
 			}
 		}},
 		{"theme_picker", "pick a color theme", nil, (*UI).pickTheme},
@@ -279,6 +281,7 @@ func (u *UI) keysText() string {
 		fmt.Fprintf(&b, "| %s | %s | %s |\n", a.name, keys, a.desc)
 	}
 	b.WriteString("\nEditor keys (ctrl+a/e/b/f/w/u/k/y, alt+b/f/d, arrows) apply when a key is not bound above.\n")
+	b.WriteString("With vim keys on (`input_mode: vim` or `/vim`), esc enters normal mode, where letters are vim commands and ctrl+r redoes; a second esc interrupts.\n")
 	fmt.Fprintf(&b, "Rebind in `%s` under `keys:`, e.g. `model_picker: ctrl+g`.\n", homeRel(config.Path()))
 	if len(u.keymap.warnings) > 0 {
 		b.WriteString("\n## warnings\n\n")

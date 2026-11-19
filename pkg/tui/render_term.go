@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/gfx-labs/wist/pkg/editor"
 	"github.com/gfx-labs/wist/pkg/render"
 )
 
@@ -47,19 +48,24 @@ func (u *UI) termInit() {
 	}
 }
 
-// cursorTint colors the bar cursor by the session mode: accent when the
-// agent asks, yellow in auto mode.
+// cursorTint colors the cursor by the session mode: accent when the
+// agent asks, yellow in auto mode. It is a bar, or a block in vim normal
+// and visual mode.
 func (u *UI) cursorTint() {
 	c := render.CAccent
 	if strings.EqualFold(currentName(u.modeOption()), "auto") {
 		c = render.CYellow
 	}
-	key := strings.Join([]string{strconv.Itoa(int(c))}, "")
+	shape := tcell.CursorStyleSteadyBar
+	if u.ed.Mode() >= editor.ModeNormal {
+		shape = tcell.CursorStyleSteadyBlock
+	}
+	key := strconv.Itoa(int(c)) + "/" + strconv.Itoa(int(shape))
 	if key == termState.cursorKey {
 		return
 	}
 	termState.cursorKey = key
-	u.sc.SetCursorStyle(tcell.CursorStyleSteadyBar, c)
+	u.sc.SetCursorStyle(shape, c)
 }
 
 // errorStyle is a red curly underline for the key text of failures.

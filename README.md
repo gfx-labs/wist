@@ -6,7 +6,7 @@ wist windows talk the Agent Client Protocol, using [go-acp](https://github.com/g
 
 ```sh
 go install github.com/gfx-labs/wist/cmd/wist@latest
-wist                                  # new session in the current directory
+wist                                  # a new session, created by the first prompt
 wist --resume <session-id>            # load a stored session
 wist -p "fix the failing test"        # send a first prompt right away
 wist -- --models=codex:pro/gpt-6.2-sol   # anything after -- goes to towa
@@ -102,10 +102,11 @@ Permissions: when the agent asks (for example in `--ask` mode) and both stdin an
 - `ctrl+z` suspends wist (towa keeps running), `alt+x` or `/edit` writes the prompt in `$EDITOR`, `/paste` reads the terminal clipboard over OSC 52
 - ASCII fallbacks for glyphs the terminal cannot show, and a 256-color palette without truecolor
 - per-language syntax highlighting, nested lists, reference links
-- sessions: `/fork`, `/rename`, `/archive`, `/delete`, `/back`, and delete/archive/rename keys in the session picker. The picker marks the sessions the daemon already has attached to a window ("connected", with the viewer count), so resuming one joins it instead of starting it fresh
+- sessions: a window creates its session with the first prompt, so opening and quitting wist stores none. `/fork`, `/rename`, `/archive`, `/delete`, `/back`, and delete/archive/rename keys in the session picker. The picker marks the sessions the daemon already has attached to a window ("connected", with the viewer count), so resuming one joins it instead of starting it fresh
 - `/btw <question>` forks the session and asks the question in a new tmux pane. `/split` and `/split new` open a fork or a fresh session in a new pane
 - `/stats` and the status bar show files and lines changed this session
-- `/reload` restarts the daemon's agent process and loads the current session again, so a change to the agent's config (its model list, for example) takes effect without leaving wist
+- `/reload` restarts the wist window in place and resumes its session, so a newly installed wist binary and changes to `config.yaml` take effect. A running turn keeps going in the daemon and is attached again. The daemon keeps running its old binary; run `wist daemon stop` to restart it
+- `/reload-agent` restarts the daemon's agent process and loads the current session again, so a change to the agent's config (its model list, for example) takes effect without leaving wist
 - `~/.config/wist/config.yaml` (or `config.yml`; `config.toml` is no longer read): theme presets (dark, light, catppuccin-mocha, gruvbox, tokyonight, terminal, xresources; also `wist --theme NAME`), colors, remappable keys with conflict warnings, `spawn_hook`. `/theme`, `/keys`
 
   ```yaml
@@ -113,6 +114,7 @@ Permissions: when the agent asks (for example in `--ask` mode) and both stdin an
   agent: towa
   spawn_hook: "tmux split-window -h {cmd}"
   notify: auto
+  input_mode: vim   # or emacs (default)
   theme:
     preset: xresources
     accent: "#7aa2f7"
@@ -130,6 +132,7 @@ Permissions: when the agent asks (for example in `--ask` mode) and both stdin an
 - `/` completion for local commands and the commands towa advertises
 - `@` file completion from git. A mentioned file gets attached as a resource link
 - a multi-line editor with emacs keys, a kill ring, history and bracketed paste
+- vim keys in the input with `input_mode: vim` or `/vim`. Each prompt starts in insert mode, and esc switches to normal mode, which has a block cursor and a mode tag on the input border. Normal mode supports counts; motions `h l j k w b e W B E ge 0 ^ $ f t F T ; , gg G`; operators `d c y` with motions, `dd cc yy` and text objects (`iw aw i" a' i( a{ i[ i<` and similar); `x X D C s S Y p P r ~ J`; `i a I A o O`; `u`, `ctrl+r` and `.`; and visual mode with `v` and `V`. `j`/`k` on the first or last line browse history. Enter sends from either mode. In normal mode, esc interrupts a running turn. Other keys (arrows, ctrl keys) work as in emacs mode, but in normal mode `ctrl+r` redoes instead of searching history
 - mouse wheel and page scrolling, with a terminal title that follows the session title, and `/copy` to copy over OSC 52
 
 `/help` inside the app lists every key and command.
