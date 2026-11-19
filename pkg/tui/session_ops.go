@@ -202,7 +202,7 @@ func (u *UI) confirmDelete(id acp.SessionId, label string) {
 // in another process.
 func (u *UI) childArgs(extra ...string) []string {
 	o := u.opts
-	args := []string{"--cwd", o.Cwd}
+	args := []string{"--cwd", o.Cwd, "--socket", o.Socket}
 	if o.Agent != "" {
 		args = append(args, "--agent", o.Agent)
 	} else if o.Towa != "" && o.Towa != "towa" {
