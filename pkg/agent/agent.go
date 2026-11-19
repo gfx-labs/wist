@@ -163,9 +163,9 @@ func Connect(ctx context.Context, o Options) (*Process, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer logFile.Close()
+	defer func() { _ = logFile.Close() }()
 	args := append([]string{"serve", "--listen.stdio=false", "--listen.unix.path=" + o.Socket}, o.Args...)
-	fmt.Fprintf(logFile, "\n--- wist %s: %s %s\n", time.Now().Format(time.RFC3339), o.Bin, strings.Join(args, " "))
+	_, _ = fmt.Fprintf(logFile, "\n--- wist %s: %s %s\n", time.Now().Format(time.RFC3339), o.Bin, strings.Join(args, " "))
 	cmd := exec.Command(o.Bin, args...)
 	cmd.Dir = o.Cwd
 	cmd.Env = append(os.Environ(), o.Env...)

@@ -2,7 +2,7 @@
 
 wist is a terminal UI for [towa](https://github.com/gfx-labs/towa), built with [tcell](https://github.com/gdamore/tcell). The design takes a lot from [jcode](https://github.com/1jehuang/jcode).
 
-wist starts `towa` as a child process and talks the Agent Client Protocol to it over stdio, using [go-acp](https://github.com/gfx-labs/go-acp). towa's stderr goes to `$XDG_STATE_HOME/wist/towa.log`.
+wist windows talk the Agent Client Protocol, using [go-acp](https://github.com/gfx-labs/go-acp), to the wist daemon, which runs one `towa` process for all of them (see below). towa's stderr goes to `$XDG_STATE_HOME/wist/towa.log`.
 
 ```sh
 go install github.com/gfx-labs/wist/cmd/wist@latest
@@ -13,8 +13,20 @@ wist -- --models=codex:pro/gpt-6.2-sol   # anything after -- goes to towa
 wist ask "explain this repository"    # one prompt, no UI (see below)
 wist sessions -w 'gfx-labs'           # stored sessions, filtered by workdir (see below)
 wist agents                           # list ACP registry agents
+wist daemon stop                      # stop the daemon and its agent
 wist --help                           # all flags; wist ask --help for ask
 ```
+
+## wist daemon
+
+The first wist window starts the daemon in the background, and later windows connect to it. The daemon runs one agent process and serves ACP on a unix socket: `--socket`, else `$WIST_SOCKET`, else `$XDG_RUNTIME_DIR/wist/daemon.sock`. Pass `--socket` or set `WIST_SOCKET` to run a separate daemon.
+
+- A turn keeps running when the window that started it closes. `wist --resume <id>` attaches again.
+- Several windows can open one session. Each one sees the others' prompts and output, prompts run in the order they arrive, and a permission request goes to every window, where the first answer wins.
+- Every session's updates are stored in SQLite (`$XDG_STATE_HOME/wist/daemon.db`), so attaching replays from the daemon instead of from the agent. Messages are indexed for full text search.
+- The agent flags (`--towa`, `--agent`, `--towa-args`, args after `--`) take effect only when they start the daemon. A window that finds a daemon already running uses its agent and says so. Run `wist daemon stop` to restart with other flags.
+- Other ACP clients, such as a web UI, connect to the same socket. Besides ACP, the daemon answers `_wist/sessions` (stored sessions with busy state and viewer count), `_wist/search` (`{"query": "...", "limit": n}`), `_wist/reload` and `_wist/shutdown`.
+- `wist daemon` runs it in the foreground and logs to stderr. When a window starts it, the log is `$XDG_STATE_HOME/wist/daemon.log`.
 
 ## wist sessions
 
@@ -93,7 +105,7 @@ Permissions: when the agent asks (for example in `--ask` mode) and both stdin an
 - sessions: `/fork`, `/rename`, `/archive`, `/delete`, `/back`, and delete/archive/rename keys in the session picker
 - `/btw <question>` forks the session and asks the question in a new tmux pane. `/split` and `/split new` open a fork or a fresh session in a new pane
 - `/stats` and the status bar show files and lines changed this session
-- `/reload` restarts the agent process and loads the current session again, so a change to the agent's config (its model list, for example) takes effect without leaving wist
+- `/reload` restarts the daemon's agent process and loads the current session again, so a change to the agent's config (its model list, for example) takes effect without leaving wist
 - `~/.config/wist/config.yaml` (or `config.yml`; `config.toml` is no longer read): theme presets (dark, light, catppuccin-mocha, gruvbox, tokyonight, terminal, xresources; also `wist --theme NAME`), colors, remappable keys with conflict warnings, `spawn_hook`. `/theme`, `/keys`
 
   ```yaml

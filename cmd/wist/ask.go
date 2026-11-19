@@ -31,7 +31,7 @@ func askCommand(cfg config.Config) *cli.Command {
 			&cli.StringFlag{Name: "towa", Value: defTowa, Destination: &f.Bin, Usage: "path of the towa binary"},
 			&cli.StringFlag{Name: "agent", Value: cfg.Agent, Destination: &f.Agent, Usage: "run this ACP registry agent instead of towa"},
 			&cli.StringFlag{Name: "towa-args", Destination: &f.TowaArgs, Usage: "extra arguments for the agent, split on spaces"},
-			&cli.StringFlag{Name: "socket", Value: cfg.TowaSocket, Destination: &f.Socket, Usage: "connect to the towa daemon on this unix socket, starting towa serve on it when none listens"},
+			&cli.StringFlag{Name: "towa-socket", Value: cfg.TowaSocket, Destination: &f.Socket, Usage: "connect to the towa daemon on this unix socket, starting towa serve on it when none listens"},
 			&cli.StringFlag{Name: "cwd", Destination: &f.Cwd, Usage: "working directory of the session (default: current directory)"},
 			&cli.StringFlag{Name: "log", Destination: &f.Log, Usage: "file that receives the agent's stderr (default: $XDG_STATE_HOME/wist/towa.log)"},
 			&cli.StringFlag{Name: "resume", Destination: &f.Resume, Usage: "continue the session with this id, or \"last\" for the latest one in cwd"},

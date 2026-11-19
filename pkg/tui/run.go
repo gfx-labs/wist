@@ -1,18 +1,18 @@
-// Package tui is the wist terminal user interface: it runs an ACP agent as
-// a child process and drives the transcript, input, panels and overlays.
+// Package tui is the wist terminal user interface: it speaks ACP to the
+// wist daemon, which runs the agent, and drives the transcript, input,
+// panels and overlays.
 package tui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
-	"time"
 
 	acp "github.com/gfx-labs/go-acp"
-	"github.com/gfx-labs/wist/pkg/agent"
 	"github.com/gfx-labs/wist/pkg/config"
+	"github.com/gfx-labs/wist/pkg/daemon"
 )
 
 // Options holds the command line settings for one wist session.
@@ -21,121 +21,96 @@ type Options struct {
 	Agent    string   // registry agent id; empty means towa
 	Args     []string // full argument list for the agent process
 	PassArgs []string // the user's extra agent args, forwarded to child windows
-	Env      []string // extra environment for the agent process
-	Cwd      string   // session working directory
-	Resume   string   // session id to load instead of starting a new one
-	Log      string   // file that receives the agent's stderr
-	Socket   string   // towa daemon socket; empty runs towa as a child
-	Prompt   string   // prompt sent as soon as the session is ready
-	NoMouse  bool     // leave the mouse to the terminal
-	Theme    string   // theme preset overriding the config
+	AgentSet bool     // the agent was chosen on the command line
+	Socket   string   // daemon socket
+	// TowaSocket is a towa daemon socket the wist daemon connects to;
+	// empty runs towa as the daemon's child.
+	TowaSocket string
+	Cwd        string // session working directory
+	Resume     string // session id to load instead of starting a new one
+	Log        string // file that receives the agent's stderr
+	Prompt     string // prompt sent as soon as the session is ready
+	NoMouse    bool   // leave the mouse to the terminal
+	Theme      string // theme preset overriding the config
 }
 
-// Run starts the agent process described by o, speaks ACP to it and runs
-// the terminal UI until the user quits. When o.Agent names a registry
-// agent it is resolved (and downloaded if needed) first.
-func Run(o Options, cfg config.Config) error {
-	ao := agent.Options{Bin: o.Towa, Agent: o.Agent, Args: o.Args}
-	if err := agent.Resolve(&ao, func(s string) { fmt.Fprintln(os.Stderr, "wist:", s) }); err != nil {
-		return err
+// DaemonArgs are the wist arguments that start a daemon running the agent
+// o describes.
+func (o Options) DaemonArgs() []string {
+	args := []string{"daemon", "--socket", o.Socket, "--log", o.Log}
+	if o.TowaSocket != "" {
+		args = append(args, "--towa-socket", o.TowaSocket)
 	}
-	o.Towa, o.Args, o.Env = ao.Bin, ao.Args, ao.Env
-	return run(o, cfg)
+	if o.Agent != "" {
+		args = append(args, "--agent", o.Agent)
+	} else {
+		args = append(args, "--towa", o.Towa)
+	}
+	return append(append(args, "--"), o.Args...)
 }
 
-func run(o Options, cfg config.Config) error {
+// Run connects to the daemon on o.Socket, starting it when none is
+// running, and runs the terminal UI until the user quits. A running
+// daemon keeps its agent: the agent options only apply to a daemon this
+// call starts.
+func Run(o Options, cfg config.Config) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	self, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	conn, spawned, err := daemon.Dial(ctx, o.Socket, append([]string{self}, o.DaemonArgs()...))
+	if err != nil {
+		return fmt.Errorf("connect to daemon %s: %w", o.Socket, err)
+	}
+	defer func() { _ = conn.Close() }()
 
 	ui, err := newUI(o, cfg)
 	if err != nil {
 		return err
 	}
-	ac, err := startAgent(ctx, o, ui)
-	if err != nil {
-		return err
+	if o.AgentSet && !spawned {
+		ui.info("the daemon on " + o.Socket + " was already running, so its agent is used and the agent flags are ignored (restart it with: wist daemon stop)")
 	}
-	ui.conn = ac.conn
-
-	// /reload restarts the agent so it reads its config again. The reload
-	// goroutine owns ac: run never touches it after this point.
-	reloads := make(chan acp.SessionId, 1)
+	ui.conn = startConn(ctx, conn, ui)
 	ui.reload = func(sid acp.SessionId) {
-		select {
-		case reloads <- sid:
-		default:
-		}
-	}
-	stopped := make(chan struct{})
-	go func() {
-		defer close(stopped)
-		for {
-			select {
-			case sid := <-reloads:
-				ac.cancel()
-				ac.proc.Stop(2 * time.Second)
-				nac, err := startAgent(ctx, o, ui)
-				if err != nil {
-					ui.post(func(u *UI) {
-						u.reloading = false
-						u.errorf("reload: %v", err)
-					})
-					continue
-				}
-				ac = nac
-				done := make(chan struct{})
-				ui.post(func(u *UI) { u.conn = nac.conn; close(done) })
-				<-done
-				ui.connect(ctx, sid, "")
-				ui.post(func(u *UI) { u.reloading = false })
-			case <-ctx.Done():
-				ac.cancel()
-				ac.proc.Stop(2 * time.Second)
+		go func() {
+			_, err := ui.conn.SendExtensionRequest(ctx, daemon.MethodReload, map[string]any{})
+			if err != nil {
+				ui.post(func(u *UI) {
+					u.reloading = false
+					u.errorf("reload: %v", err)
+				})
 				return
 			}
-		}
-	}()
+			ui.loadSession(sid)
+			ui.post(func(u *UI) { u.reloading = false })
+		}()
+	}
 	go ui.connect(ctx, acp.SessionId(o.Resume), o.Prompt)
 
 	runErr := ui.loop()
 	cancel()
-	<-stopped
 	if ui.lastSession != "" {
-		agent := ""
-		if o.Agent != "" {
-			agent = " --agent " + o.Agent
-		}
-		fmt.Printf("session %s\nresume with: wist%s --resume %s\n", ui.lastSession, agent, ui.lastSession)
+		fmt.Printf("session %s\nresume with: wist --resume %s\n", ui.lastSession, ui.lastSession)
 	}
 	return runErr
 }
 
-// agentConn is one agent process and the ACP connection to it.
-type agentConn struct {
-	proc   *agent.Process
-	conn   *acp.ClientSideConnection
-	cancel context.CancelFunc
-}
-
-// startAgent spawns the agent and serves ACP on its stdio. The connection
-// stops when cancel is called or ctx ends.
-func startAgent(ctx context.Context, o Options, ui *UI) (*agentConn, error) {
-	proc, err := agent.Start(ctx, agent.Options{Bin: o.Towa, Agent: o.Agent, Args: o.Args, Env: o.Env, Cwd: o.Cwd, Log: o.Log, Socket: o.Socket})
-	if err != nil {
-		return nil, err
-	}
-	cctx, ccancel := context.WithCancel(ctx)
-	conn := acp.NewClientSideConnection(&client{ui: ui}, proc.Stdin, proc.Stdout, nil)
+// startConn serves ACP on the daemon connection until ctx ends.
+func startConn(ctx context.Context, c net.Conn, ui *UI) *acp.ClientSideConnection {
+	conn := acp.NewClientSideConnection(&client{ui: ui}, c, c, nil)
 	go func() {
-		err := conn.Serve(cctx)
+		err := conn.Serve(ctx)
 		ui.post(func(u *UI) {
-			if cctx.Err() == nil {
-				u.addBlock(&block{kind: kindError, text: fmt.Sprintf("connection to towa closed: %v (see %s)", errOrEOF(err), o.Log)})
+			if ctx.Err() == nil {
+				u.addBlock(&block{kind: kindError, text: fmt.Sprintf("connection to the wist daemon closed: %v (see %s)", errOrEOF(err), daemon.LogPath())})
 				u.busy = false
 			}
 		})
 	}()
-	return &agentConn{proc: proc, conn: conn, cancel: ccancel}, nil
+	return conn
 }
 
 func errOrEOF(err error) error {
@@ -144,5 +119,3 @@ func errOrEOF(err error) error {
 	}
 	return err
 }
-
-var errQuit = errors.New("quit")
